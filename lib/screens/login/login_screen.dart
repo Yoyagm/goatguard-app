@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import '../../config/theme.dart';
+import '../../providers/auth_provider.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -15,14 +17,32 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _obscurePassword = true;
   bool _isLoading = false;
 
-  void _handleLogin() {
+  Future<void> _handleLogin() async {
+    final username = _usernameController.text.trim();
+    final password = _passwordController.text;
+    if (username.isEmpty || password.isEmpty) return;
+
     setState(() => _isLoading = true);
-    Future.delayed(const Duration(milliseconds: 1200), () {
-      if (mounted) {
-        setState(() => _isLoading = false);
-        Navigator.of(context).pushReplacementNamed('/main');
-      }
-    });
+
+    final auth = context.read<AuthProvider>();
+    final success = await auth.login(username, password);
+
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+
+    if (success) {
+      Navigator.of(context).pushReplacementNamed('/main');
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: AppColors.critical,
+          content: Text(
+            auth.error ?? 'Error de autenticación',
+            style: GoogleFonts.inter(color: Colors.white),
+          ),
+        ),
+      );
+    }
   }
 
   @override
@@ -117,6 +137,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 controller: _passwordController,
                 obscureText: _obscurePassword,
                 style: GoogleFonts.inter(color: AppColors.textPrimary, fontSize: 15),
+                onSubmitted: (_) => _handleLogin(),
                 decoration: InputDecoration(
                   hintText: 'Enter password',
                   prefixIcon: const Icon(Icons.lock_outline_rounded,

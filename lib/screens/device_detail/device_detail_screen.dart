@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import '../../config/theme.dart';
 import '../../config/helpers.dart';
 import '../../models/device.dart';
+import '../../providers/alert_provider.dart';
+import '../../providers/device_provider.dart';
 import '../../providers/mock_data.dart';
 import '../../widgets/common/resource_bar.dart';
 import '../../widgets/common/status_chip.dart';
@@ -17,9 +20,18 @@ class DeviceDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isAgent = device.coverage == DeviceCoverage.withAgent;
-    final alerts = MockData.alerts
+
+    // Alertas desde provider; filtro client-side porque GET /alerts no soporta device_id
+    final alertProv = context.watch<AlertProvider>();
+    final allAlerts = alertProv.alerts.isNotEmpty
+        ? alertProv.alerts
+        : MockData.alerts;
+    final alerts = allAlerts
         .where((a) => a.deviceIp == device.ipAddress)
         .toList();
+
+    // TimeSeries: MockData — GET /metrics/device/{id} no implementado aún
+    // TODO(RF-17): reemplazar cuando el endpoint exista
 
     return Scaffold(
       backgroundColor: AppColors.base,
@@ -205,7 +217,7 @@ class DeviceDetailScreen extends StatelessWidget {
             ),
             const SizedBox(height: 12),
 
-            // TCP Retransmissions Chart
+            // TCP Retransmissions Chart (MockData — sin historial en API)
             LineMetricChart(
               title: 'TCP Retransmissions (1h)',
               data: MockData.generateTimeSeries(
@@ -221,7 +233,7 @@ class DeviceDetailScreen extends StatelessWidget {
             ),
             const SizedBox(height: 12),
 
-            // Speed Chart
+            // Speed Chart (MockData — sin historial en API)
             LineMetricChart(
               title: 'Bandwidth Usage (1h)',
               data: MockData.generateTimeSeries(
@@ -378,6 +390,8 @@ class DeviceDetailScreen extends StatelessWidget {
 
   void _showAliasDialog(BuildContext context) {
     final controller = TextEditingController(text: device.name);
+    final deviceProv = context.read<DeviceProvider>();
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -393,6 +407,7 @@ class DeviceDetailScreen extends StatelessWidget {
         content: TextField(
           controller: controller,
           autofocus: true,
+          maxLength: 64,
           style: GoogleFonts.inter(color: AppColors.textPrimary),
           decoration: const InputDecoration(hintText: 'Device name'),
         ),
@@ -405,17 +420,25 @@ class DeviceDetailScreen extends StatelessWidget {
             ),
           ),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
+              final alias = controller.text.trim();
+              if (alias.isEmpty) return;
               Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  backgroundColor: AppColors.surface,
-                  content: Text(
-                    'Alias updated to "${controller.text}"',
-                    style: GoogleFonts.inter(color: AppColors.textPrimary),
-                  ),
-                ),
+              final ok = await deviceProv.updateAlias(
+                int.parse(device.id),
+                alias,
               );
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    backgroundColor: AppColors.surface,
+                    content: Text(
+                      ok ? 'Alias updated to "$alias"' : 'Error updating alias',
+                      style: GoogleFonts.inter(color: AppColors.textPrimary),
+                    ),
+                  ),
+                );
+              }
             },
             child: const Text('Save'),
           ),

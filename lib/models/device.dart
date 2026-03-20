@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../config/helpers.dart';
 
 enum DeviceType { desktop, laptop, server, phone, printer, camera, iot, unknown }
 
@@ -42,6 +43,71 @@ class Device {
     this.alertCount = 0,
     required this.lastSeen,
   });
+
+  /// Factoría desde JSON de la API (GET /devices, GET /devices/{id})
+  factory Device.fromJson(Map<String, dynamic> json) {
+    return Device(
+      id: json['id'].toString(),
+      name: (json['alias'] as String?) ??
+          (json['hostname'] as String?) ??
+          'Unknown',
+      ipAddress: json['ip'] as String,
+      macAddress: json['mac'] as String,
+      type: _parseDeviceType(json['device_type'] as String?),
+      coverage: (json['has_agent'] as bool? ?? false)
+          ? DeviceCoverage.withAgent
+          : DeviceCoverage.arpOnly,
+      status: (json['status'] as String?) == 'active'
+          ? DeviceStatus.online
+          : DeviceStatus.offline,
+      os: null, // El server no recolecta OS
+      cpuUsage: _toDouble(json['metrics']?['cpu_pct']),
+      ramUsage: _toDouble(json['metrics']?['ram_pct']),
+      speedMbps: _toDouble(json['metrics']?['link_speed']),
+      latencyMs: _toDouble(json['metrics']?['dns_response_time']),
+      retransmissionsPerMin: _toDouble(json['metrics']?['tcp_retransmissions']),
+      failedConnections: json['metrics']?['failed_connections'] as int?,
+      alertCount: json['alert_count'] as int? ?? 0,
+      lastSeen: json['last_seen'] != null
+          ? parseApiTimestamp(json['last_seen'] as String)
+          : DateTime.now(),
+    );
+  }
+
+  /// Factoría rápida desde payload del WebSocket (campos reducidos)
+  factory Device.fromWsJson(Map<String, dynamic> json) {
+    return Device(
+      id: json['id'].toString(),
+      name: (json['hostname'] as String?) ?? 'Unknown',
+      ipAddress: json['ip'] as String,
+      macAddress: '',
+      type: DeviceType.unknown,
+      coverage: (json['has_agent'] as bool? ?? false)
+          ? DeviceCoverage.withAgent
+          : DeviceCoverage.arpOnly,
+      status: (json['status'] as String?) == 'active'
+          ? DeviceStatus.online
+          : DeviceStatus.offline,
+      cpuUsage: _toDouble(json['cpu_pct']),
+      ramUsage: _toDouble(json['ram_pct']),
+      speedMbps: null,
+      lastSeen: DateTime.now(),
+    );
+  }
+
+  static DeviceType _parseDeviceType(String? raw) {
+    if (raw == null) return DeviceType.unknown;
+    return DeviceType.values.firstWhere(
+      (e) => e.name == raw,
+      orElse: () => DeviceType.unknown,
+    );
+  }
+
+  static double? _toDouble(dynamic val) {
+    if (val == null) return null;
+    if (val is num) return val.toDouble();
+    return double.tryParse(val.toString());
+  }
 
   IconData get icon {
     switch (type) {

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import '../../config/theme.dart';
 import '../../config/helpers.dart';
+import '../../providers/metrics_provider.dart';
 import '../../providers/mock_data.dart';
 import '../../widgets/charts/line_metric_chart.dart';
 import '../../widgets/charts/bar_metric_chart.dart';
@@ -18,8 +20,28 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final metrics = MockData.networkMetrics;
-    final consumers = MockData.topConsumers;
+    final metricsProv = context.watch<MetricsProvider>();
+
+    // Métricas actuales desde API; fallback a MockData
+    final metrics = metricsProv.metrics ?? MockData.networkMetrics;
+    final consumers = metricsProv.topConsumers.isNotEmpty
+        ? metricsProv.topConsumers
+        : MockData.topConsumers;
+
+    // TimeSeries: MockData como fallback — GET /metrics/history no implementado aún
+    // TODO(RF-17): reemplazar cuando el endpoint exista
+    final latencySeries = MockData.generateTimeSeries(
+      points: 30, baseValue: 35, variance: 20,
+    );
+    final lossSeries = MockData.generateTimeSeries(
+      points: 30, baseValue: 0.3, variance: 0.5,
+    );
+    final jitterSeries = MockData.generateTimeSeries(
+      points: 30, baseValue: 6, variance: 8, withSpike: true,
+    );
+    final dnsSeries = MockData.generateTimeSeries(
+      points: 30, baseValue: 40, variance: 25,
+    );
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -106,11 +128,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         // ISP Latency Chart
         LineMetricChart(
           title: 'Average ISP Latency',
-          data: MockData.generateTimeSeries(
-            points: 30,
-            baseValue: 35,
-            variance: 20,
-          ),
+          data: latencySeries,
           lineColor: AppColors.chartGreen,
           unit: 'ms',
           warningThreshold: 100,
@@ -122,11 +140,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         // Packet Loss Chart
         LineMetricChart(
           title: 'Global Packet Loss',
-          data: MockData.generateTimeSeries(
-            points: 30,
-            baseValue: 0.3,
-            variance: 0.5,
-          ),
+          data: lossSeries,
           lineColor: AppColors.chartRed,
           unit: '%',
           warningThreshold: 1.0,
@@ -138,12 +152,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         // Jitter Chart
         LineMetricChart(
           title: 'Jitter',
-          data: MockData.generateTimeSeries(
-            points: 30,
-            baseValue: 6,
-            variance: 8,
-            withSpike: true,
-          ),
+          data: jitterSeries,
           lineColor: AppColors.chartOrange,
           unit: 'ms',
           warningThreshold: 30,
@@ -155,11 +164,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         // DNS Response Time
         LineMetricChart(
           title: 'DNS Response Time',
-          data: MockData.generateTimeSeries(
-            points: 30,
-            baseValue: 40,
-            variance: 25,
-          ),
+          data: dnsSeries,
           lineColor: AppColors.chartBlue,
           unit: 'ms',
           warningThreshold: 100,

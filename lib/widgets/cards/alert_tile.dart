@@ -6,8 +6,9 @@ import '../../models/alert.dart';
 
 class AlertTile extends StatefulWidget {
   final NetworkAlert alert;
+  final VoidCallback? onSeen;
 
-  const AlertTile({super.key, required this.alert});
+  const AlertTile({super.key, required this.alert, this.onSeen});
 
   @override
   State<AlertTile> createState() => _AlertTileState();
@@ -52,7 +53,13 @@ class _AlertTileState extends State<AlertTile> {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => setState(() => _expanded = !_expanded),
+      onTap: () {
+        setState(() => _expanded = !_expanded);
+        // Marcar como leída al expandir por primera vez
+        if (_expanded && !widget.alert.isRead) {
+          widget.onSeen?.call();
+        }
+      },
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         decoration: BoxDecoration(
@@ -148,10 +155,10 @@ class _AlertTileState extends State<AlertTile> {
                 ],
               ),
             ),
-            if (_expanded)
+            if (_expanded) ...[
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.fromLTRB(62, 0, 14, 14),
+                padding: const EdgeInsets.fromLTRB(62, 0, 14, 8),
                 child: Text(
                   widget.alert.description,
                   style: GoogleFonts.inter(
@@ -161,6 +168,34 @@ class _AlertTileState extends State<AlertTile> {
                   ),
                 ),
               ),
+              if (!widget.alert.isRead && widget.onSeen != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(62, 0, 14, 12),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: GestureDetector(
+                      onTap: widget.onSeen,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.brand.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          'Mark as read',
+                          style: GoogleFonts.inter(
+                            color: AppColors.brand,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
           ],
         ),
       ),

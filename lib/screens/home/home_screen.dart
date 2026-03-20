@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import '../../config/theme.dart';
 import '../../config/helpers.dart';
+import '../../providers/device_provider.dart';
+import '../../providers/metrics_provider.dart';
 import '../../providers/mock_data.dart';
 import '../../widgets/common/health_bar.dart';
 import '../../widgets/common/metric_card.dart';
@@ -14,16 +17,31 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final metrics = MockData.networkMetrics;
-    final agents = MockData.agents;
-    final consumers = MockData.topConsumers;
+    final metricsProv = context.watch<MetricsProvider>();
+    final deviceProv = context.watch<DeviceProvider>();
+
+    // Fallback a MockData si la API aún no responde
+    final metrics = metricsProv.metrics ?? MockData.networkMetrics;
+    final agents = deviceProv.agents.isNotEmpty
+        ? deviceProv.agents
+        : MockData.agents;
+    final consumers = metricsProv.topConsumers.isNotEmpty
+        ? metricsProv.topConsumers
+        : MockData.topConsumers;
+
     final activeAgents = agents.where((a) => a.status.name == 'active').length;
     final inactiveAgents = agents.length - activeAgents;
 
     return RefreshIndicator(
       color: AppColors.brand,
       backgroundColor: AppColors.surface,
-      onRefresh: () async => await Future.delayed(const Duration(seconds: 1)),
+      onRefresh: () async {
+        await deviceProv.fetchDevices();
+        await metricsProv.fetchMetrics(
+          activeAgents: deviceProv.activeAgentCount,
+          totalAgents: deviceProv.totalAgentCount,
+        );
+      },
       child: ListView(
         padding: const EdgeInsets.only(bottom: 24),
         children: [
