@@ -18,7 +18,9 @@ migrate_working_dir/
 *.iws
 .idea/
 
-# VS Code
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
 #.vscode/
 
 # Flutter/Dart/Pub related
@@ -37,7 +39,7 @@ app.*.symbols
 # Obfuscation related
 app.*.map.json
 
-# Android Studio build artifacts
+# Android Studio will place build artifacts here
 /android/app/debug
 /android/app/profile
 /android/app/release
@@ -58,25 +60,3 @@ firebase_options.dart
 .flutter-plugins
 *.g.dart
 *.freezed.dart
-
-# Claude Code (local)
-.claude/
-
-# Flutter app build
-goatguard_app/build/
-goatguard_app/.dart_tool/
-goatguard_app/.flutter-plugins
-goatguard_app/.flutter-plugins-dependencies
-goatguard_app/.packages
-
-# Python
-__pycache__/
-.venv/
-*.egg-info/
-goatguard-server/.venv/
-goatguard-server/goatguard_server.log
-goatguard-server/pcap_output/
-goatguard-server/zeek_output/
-
-# Compressed
-*.zip

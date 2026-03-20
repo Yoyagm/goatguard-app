@@ -1,0 +1,225 @@
+#,MÉTODO,RUTA,RF ASOCIADO,NOMBRE,DESCRIPCIÓN,AUTENTICACIÓN,REQUEST BODY / QUERY PARAMS,RESPONSE (200/201),CÓDIGOS DE ERROR,NOTAS
+AUTENTICACIÓN,,,,,,,,,,
+1,POST,/api/auth/login,RF-030,Inicio de sesión,"Recibe credenciales del administrador, las valida contra hash almacenado y retorna un token JWT con tiempo de expiración. El token se usa tanto para endpoints REST como para establecer conexiones WebSocket.",No,"{
+  ""username"": ""string"",
+  ""password"": ""string""
+}","{
+  ""token"": ""string (JWT)"",
+  ""expires_at"": ""ISO 8601""
+}","401 Credenciales inválidas
+400 Campos requeridos faltantes",El token debe incluirse como Bearer en peticiones REST y como query param ?token=<JWT> en conexiones WebSocket. Se crea registro en SESSION.
+2,POST,/api/auth/logout,RF-043,Cierre de sesión,"Revoca el token JWT activo del usuario, invalidando la sesión actual y cerrando cualquier conexión WebSocket asociada.",Bearer JWT,Ninguno,"{
+  ""message"": ""Sesión cerrada exitosamente""
+}",401 Token inválido o expirado,Marca la SESSION como revocada. Elimina PUSH_TOKEN asociado al dispositivo. El servidor cierra los WebSockets del usuario.
+DISPOSITIVOS,,,,,,,,,,
+3,GET,/api/devices,RF-032,Inventario de dispositivos,"Retorna la lista completa de dispositivos detectados en la red, con información de identificación, estado y clasificación de cobertura.",Bearer JWT,"Query params opcionales:
+?status=active|inactive
+?has_agent=true|false
+?search=<hostname|ip|alias>","[
+  {
+    ""id"": ""int"",
+    ""ip"": ""string"",
+    ""mac"": ""string"",
+    ""hostname"": ""string"",
+    ""alias"": ""string|null"",
+    ""has_agent"": ""bool"",
+    ""status"": ""string"",
+    ""detected_type"": ""string|null""
+  }
+]","401 No autenticado
+500 Error interno","Fuente: tabla DEVICE (estática, no cambia con frecuencia). Consulta REST bajo demanda del usuario. No se usa para dashboard en tiempo real."
+4,GET,/api/devices/{id},RF-033,Detalle de dispositivo,"Retorna toda la información detallada de un dispositivo específico, incluyendo sus métricas actuales leídas de la tabla de estado current.",Bearer JWT,Path param: id (int),"{
+  ""id"": ""int"",
+  ""network_id"": ""int"",
+  ""ip"": ""string"",
+  ""mac"": ""string"",
+  ""hostname"": ""string"",
+  ""alias"": ""string|null"",
+  ""has_agent"": ""bool"",
+  ""status"": ""string"",
+  ""latest_metrics"": { ... },
+  ""agent"": { ... } | null
+}","401 No autenticado
+404 Dispositivo no encontrado","Fuente: DEVICE + DEVICE_CURRENT_METRICS (JOIN por device_id). latest_metrics viene de la tabla current (lectura O(1), no del historial). agent es null si no tiene agente."
+5,PUT,/api/devices/{id}/alias,RF-038,Edición de alias,Permite al administrador asignar o modificar un alias descriptivo a un dispositivo del inventario.,Bearer JWT,"{
+  ""alias"": ""string (max 64 chars)""
+}","{
+  ""id"": ""int"",
+  ""alias"": ""string"",
+  ""updated_at"": ""ISO 8601""
+}","401 No autenticado
+404 Dispositivo no encontrado
+400 Alias inválido o vacío",Fuente: tabla DEVICE. El alias se almacena en el campo alias de DEVICE. No afecta hostname ni detected_type.
+MÉTRICAS HISTÓRICAS POR ENDPOINT,,,,,,,,,,
+6,GET,/api/devices/{id}/metrics/history,RF-040,Métricas históricas de un endpoint,"Retorna métricas históricas de un endpoint específico, filtradas por rango de tiempo. Esta es la ÚNICA forma de consultar historial; el dashboard usa WebSocket.",Bearer JWT,"Path param: id (int)
+Query params requeridos:
+?from=<ISO 8601>
+&to=<ISO 8601>
+Opcional:
+?resolution=1m|5m|1h|1d","[
+  {
+    ""timestamp"": ""ISO 8601"",
+    ""bandwidth_in"": ""float"",
+    ""bandwidth_out"": ""float"",
+    ""tcp_retransmissions"": ""int"",
+    ""failed_connections"": ""int"",
+    ""dns_response_time"": ""float"",
+    ""jitter"": ""float"",
+    ""cpu_pct"": ""float"",
+    ""ram_pct"": ""float"",
+    ""link_speed"": ""float""
+  }
+]","401 No autenticado
+404 Dispositivo no encontrado
+400 Rango de tiempo inválido","Fuente: tabla ENDPOINT_SNAPSHOT (historial). Índice compuesto (device_id, timestamp DESC). resolution permite agregar datos en intervalos mayores. Por defecto 1m. Sujeto a política de retención: <7d resolución original, 7-30d promedios/hora, >30d promedios/día."
+MÉTRICAS HISTÓRICAS DE RED,,,,,,,,,,
+7,GET,|,RF-040,Métricas históricas de la red,"Retorna métricas históricas de la red filtradas por rango de tiempo. Las métricas actuales se reciben por WebSocket, no por este endpoint.",Bearer JWT,"Query params requeridos:
+?from=<ISO 8601>
+&to=<ISO 8601>
+Opcional:
+?resolution=1m|5m|1h|1d","[
+  {
+    ""timestamp"": ""ISO 8601"",
+    ""isp_latency_avg"": ""float"",
+    ""packet_loss_pct"": ""float"",
+    ""jitter"": ""float"",
+    ""dns_response_time_avg"": ""float"",
+    ""failed_connections_global"": ""int""
+  }
+]","401 No autenticado
+400 Rango de tiempo inválido","Fuente: tabla NETWORK_SNAPSHOT (historial). Índice compuesto (network_id, timestamp DESC). Misma lógica de resolution y retención que el historial por endpoint."
+AGENTES,,,,,,,,,,
+8,GET,/api/agents,RF-037,Estado de agentes,Retorna la lista de todos los agentes registrados en el colector con su estado y última conexión.,Bearer JWT,"Query param opcional:
+?status=active|inactive","[
+  {
+    ""id"": ""int"",
+    ""uid"": ""string"",
+    ""device_id"": ""int"",
+    ""hostname"": ""string"",
+    ""ip"": ""string"",
+    ""status"": ""string"",
+    ""last_heartbeat"": ""ISO 8601"",
+    ""registered_at"": ""ISO 8601""
+  }
+]","401 No autenticado
+500 Error interno",Fuente: tabla AGENT (JOIN con DEVICE para hostname e ip). Tabla pequeña (~10 filas). Un agente se considera inactivo si no envía heartbeat en el intervalo configurado.
+ALERTAS,,,,,,,,,,
+9,GET,/api/alerts,RF-036,Listado de alertas,"Retorna las alertas generadas por el módulo de detección de tráfico sospechoso. Para alertas nuevas en tiempo real, usar el WebSocket /api/ws/alerts.",Bearer JWT,"Query params opcionales:
+?severity=low|medium|high|critical
+?seen=true|false
+?device_id=<int>
+?limit=<int>&offset=<int>","{
+  ""total"": ""int"",
+  ""alerts"": [
+    {
+      ""id"": ""int"",
+      ""device_id"": ""int"",
+      ""hostname"": ""string"",
+      ""anomaly_type"": ""string"",
+      ""description"": ""string"",
+      ""severity"": ""string"",
+      ""seen"": ""bool"",
+      ""timestamp"": ""ISO 8601""
+    }
+  ]
+}","401 No autenticado
+500 Error interno","Fuente: tabla ALERT con índice parcial (seen=false, timestamp DESC). Soporta paginación con limit/offset. Las alertas nuevas también llegan por WS /api/ws/alerts en tiempo real."
+10,PATCH,/api/alerts/{id}/seen,RF-050,Marcar alerta como vista,Marca una alerta específica como vista por el administrador.,Bearer JWT,Path param: id (int),"{
+  ""id"": ""int"",
+  ""seen"": true,
+  ""seen_at"": ""ISO 8601""
+}","401 No autenticado
+404 Alerta no encontrada",Una vez marcada como vista no se puede revertir. Afecta el badge de notificaciones en la app.
+NOTIFICACIONES PUSH,,,,,,,,,,
+11,POST,/api/push/register,RF-054,Registro de token push,Registra el token de notificaciones push del dispositivo móvil del administrador para recibir alertas vía FCM.,Bearer JWT,"{
+  ""token"": ""string (FCM token)"",
+  ""platform"": ""android""
+}","{
+  ""id"": ""int"",
+  ""registered"": true
+}","401 No autenticado
+400 Token inválido o faltante","Fuente: tabla PUSH_TOKEN. Si el token ya existe, se actualiza. Un usuario puede tener múltiples tokens (varios dispositivos)."
+12,DELETE,/api/push/register,RF-054,Eliminación de token push,Elimina el token de notificaciones push del dispositivo actual al cerrar sesión o desinstalar.,Bearer JWT,"{
+  ""token"": ""string (FCM token)""
+}","{
+  ""deleted"": true
+}","401 No autenticado
+404 Token no encontrado",Se invoca automáticamente durante logout para dejar de recibir notificaciones en ese dispositivo.
+WEBSOCKET — TIEMPO REAL,,,,,,,,,,
+13,WS,/api/ws/dashboard,"RF-034, RF-035",Dashboard en tiempo real,"Conexión WebSocket persistente que recibe actualizaciones del dashboard cada vez que el motor de análisis completa un ciclo (~1 min). Reemplaza el polling de GET /api/network/metrics, GET /api/network/top-talkers y GET /api/devices/{id}/metrics.","JWT como query param:
+?token=<JWT>","Conexión:
+ws://<host>:<port>/api/ws/dashboard?token=<JWT>
+
+Cliente puede enviar:
+{
+  ""type"": ""ping""
+}
+para mantener conexión viva.","{
+  ""type"": ""dashboard_update"",
+  ""timestamp"": ""ISO 8601"",
+  ""network"": {
+    ""isp_latency_avg"": ""float (ms)"",
+    ""packet_loss_pct"": ""float (%)"",
+    ""jitter"": ""float (ms)"",
+    ""dns_response_time_avg"": ""float (ms)"",
+    ""failed_connections_global"": ""int""
+  },
+  ""endpoints"": [
+    {
+      ""device_id"": ""int"",
+      ""bandwidth_in"": ""float"",
+      ""bandwidth_out"": ""float"",
+      ""tcp_retransmissions"": ""int"",
+      ""failed_connections"": ""int"",
+      ""cpu_pct"": ""float|null"",
+      ""ram_pct"": ""float|null"",
+      ""link_speed"": ""float|null""
+    }
+  ],
+  ""top_talkers"": [
+    {
+      ""rank"": ""int"",
+      ""device_id"": ""int"",
+      ""total_consumption"": ""float"",
+      ""is_hog"": ""bool""
+    }
+  ]
+}","4001 Token inválido o expirado (cierre WS)
+4002 Error interno del servidor","Fuente: tablas NETWORK_CURRENT_METRICS + DEVICE_CURRENT_METRICS + TOP_TALKER_CURRENT. Trigger: PostgreSQL LISTEN/NOTIFY en canal ""metrics_updated"". El servidor envía datos SOLO cuando hay actualización nueva (~1/min). La app NO debe hacer polling; si necesita forzar refresh, cierra y reabre el WS."
+14,WS,/api/ws/alerts,"RF-029, RF-039",Alertas en tiempo real,Conexión WebSocket persistente que recibe alertas nuevas en el instante en que el motor de análisis las genera. Complementa las notificaciones push FCM para cuando la app está en primer plano.,"JWT como query param:
+?token=<JWT>","Conexión:
+ws://<host>:<port>/api/ws/alerts?token=<JWT>
+
+Cliente puede enviar:
+{
+  ""type"": ""ping""
+}","{
+  ""type"": ""new_alert"",
+  ""alert"": {
+    ""id"": ""int"",
+    ""device_id"": ""int"",
+    ""hostname"": ""string"",
+    ""alias"": ""string|null"",
+    ""anomaly_type"": ""string"",
+    ""description"": ""string"",
+    ""severity"": ""string"",
+    ""timestamp"": ""ISO 8601""
+  }
+}","4001 Token inválido o expirado (cierre WS)
+4002 Error interno del servidor","Fuente: tabla ALERT. Trigger: PostgreSQL LISTEN/NOTIFY en canal ""alert_created"". Solo se envía cuando se genera una alerta nueva (evento esporádico). Simultáneamente se envía push FCM para cuando la app está cerrada."
+,,,,,,,,,,
+CONVENCIONES GENERALES,,,,,,,,,,
+Base URL,http://<servidor>:<puerto>/api,,,,,,,,,
+Formato,JSON (application/json) para REST. JSON sobre WebSocket para canales WS.,,,,,,,,,
+Autenticación REST,JWT Bearer Token en header Authorization: Bearer <token>,,,,,,,,,
+Autenticación WS,JWT como query parameter: ws://host:port/api/ws/<canal>?token=<JWT>,,,,,,,,,
+Versionamiento,"Prefijo /api (v1 implícito, extensible a /api/v2)",,,,,,,,,
+Códigos REST,"200 OK, 201 Created, 400 Bad Request, 401 Unauthorized, 404 Not Found, 500 Internal Server Error",,,,,,,,,
+Códigos WS,"4001 Token inválido/expirado, 4002 Error interno. Código 1000 para cierre normal.",,,,,,,,,
+Timestamps,Todos los timestamps en formato ISO 8601 (UTC),,,,,,,,,
+Paginación,Endpoints que retornan listas soportan ?limit=N&offset=M,,,,,,,,,
+RF-031 (Middleware),La validación de token JWT es un middleware aplicado a todas las rutas REST con 'Bearer JWT' y a la conexión inicial de WebSocket.,,,,,,,,,
+RF-039 (Push interno),"El envío de notificaciones push FCM es un proceso interno del backend activado al crear una ALERT, no un endpoint invocable.",,,,,,,,,
+NOTIFY (interno),"PostgreSQL LISTEN/NOTIFY en canales ""metrics_updated"" y ""alert_created"". El motor de análisis ejecuta NOTIFY tras cada ciclo. La API escucha y reenvía por WebSocket.",,,,,,,,,
+Tablas current,"NETWORK_CURRENT_METRICS, DEVICE_CURRENT_METRICS y TOP_TALKER_CURRENT se actualizan por UPSERT cada ciclo (~1 min). Son la fuente del WebSocket y de GET /api/devices/{id}.",,,,,,,,,
+Tablas historial,"NETWORK_SNAPSHOT, ENDPOINT_SNAPSHOT y TOP_TALKER solo se consultan en endpoints /history. Sujetas a política de retención (7d original, 30d/hora, 90d/día, >90d eliminación).",,,,,,,,,
