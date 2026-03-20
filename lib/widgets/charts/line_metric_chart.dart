@@ -85,8 +85,9 @@ class LineMetricChart extends StatelessWidget {
                       interval: (data.length / 5).ceilToDouble(),
                       getTitlesWidget: (value, meta) {
                         final idx = value.toInt();
-                        if (idx < 0 || idx >= data.length)
+                        if (idx < 0 || idx >= data.length) {
                           return const SizedBox.shrink();
+                        }
                         return Text(
                           DateFormat('HH:mm').format(data[idx].time),
                           style: GoogleFonts.jetBrainsMono(
