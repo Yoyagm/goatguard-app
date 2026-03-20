@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import '../../config/theme.dart';
 import '../../models/device.dart';
+import '../../providers/device_provider.dart';
 import '../../providers/mock_data.dart';
 import '../../widgets/cards/device_tile.dart';
 
@@ -19,12 +21,12 @@ class _InventoryScreenState extends State<InventoryScreen> {
   String _search = '';
   final _searchController = TextEditingController();
 
-  List<Device> get _filteredDevices {
-    var devices = MockData.devices;
+  List<Device> _applyFilters(List<Device> devices) {
+    var result = devices;
 
     if (_search.isNotEmpty) {
       final q = _search.toLowerCase();
-      devices = devices
+      result = result
           .where((d) =>
               d.name.toLowerCase().contains(q) ||
               d.ipAddress.contains(q) ||
@@ -34,17 +36,17 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
     switch (_filter) {
       case DeviceFilter.withAgent:
-        return devices
+        return result
             .where((d) => d.coverage == DeviceCoverage.withAgent)
             .toList();
       case DeviceFilter.arpOnly:
-        return devices
+        return result
             .where((d) => d.coverage == DeviceCoverage.arpOnly)
             .toList();
       case DeviceFilter.withAlerts:
-        return devices.where((d) => d.alertCount > 0).toList();
+        return result.where((d) => d.alertCount > 0).toList();
       case DeviceFilter.all:
-        return devices;
+        return result;
     }
   }
 
@@ -56,7 +58,14 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final devices = _filteredDevices;
+    final deviceProv = context.watch<DeviceProvider>();
+
+    // Fallback a MockData si la API aún no responde
+    final allDevices = deviceProv.devices.isNotEmpty
+        ? deviceProv.devices
+        : MockData.devices;
+    final devices = _applyFilters(allDevices);
+
     final withAgent =
         devices.where((d) => d.coverage == DeviceCoverage.withAgent).toList();
     final arpOnly =
@@ -140,8 +149,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
           child: RefreshIndicator(
             color: AppColors.brand,
             backgroundColor: AppColors.surface,
-            onRefresh: () async =>
-                await Future.delayed(const Duration(seconds: 1)),
+            onRefresh: () => deviceProv.fetchDevices(),
             child: ListView(
               children: [
                 if (_filter == DeviceFilter.all ||

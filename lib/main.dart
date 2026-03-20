@@ -1,7 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import 'config/theme.dart';
 import 'models/device.dart';
+import 'services/api_service.dart';
+import 'services/websocket_service.dart';
+import 'providers/auth_provider.dart';
+import 'providers/device_provider.dart';
+import 'providers/alert_provider.dart';
+import 'providers/metrics_provider.dart';
 import 'screens/splash/splash_screen.dart';
 import 'screens/login/login_screen.dart';
 import 'screens/main_shell.dart';
@@ -17,7 +24,23 @@ void main() {
       systemNavigationBarIconBrightness: Brightness.light,
     ),
   );
-  runApp(const GoatGuardApp());
+
+  final apiService = ApiService();
+  final wsService = WebSocketService();
+
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => AuthProvider(apiService)),
+        ChangeNotifierProvider(create: (_) => DeviceProvider(apiService)),
+        ChangeNotifierProvider(create: (_) => AlertProvider(apiService)),
+        ChangeNotifierProvider(
+          create: (_) => MetricsProvider(apiService, wsService),
+        ),
+      ],
+      child: const GoatGuardApp(),
+    ),
+  );
 }
 
 class GoatGuardApp extends StatelessWidget {

@@ -50,8 +50,16 @@ String getStatusLabel(double value, double good, double warning) {
   return 'Critical';
 }
 
+/// Parsea timestamps del server (siempre UTC, sin sufijo Z)
+DateTime parseApiTimestamp(String raw) {
+  return DateTime.parse('${raw}Z'); // Fuerza UTC → Dart convierte a local
+}
+
 String timeAgo(DateTime dateTime) {
-  final diff = DateTime.now().difference(dateTime);
+  final diff = DateTime.now().difference(
+    dateTime.isUtc ? dateTime.toLocal() : dateTime,
+  );
+  if (diff.isNegative) return 'just now';
   if (diff.inSeconds < 60) return '${diff.inSeconds}s ago';
   if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
   if (diff.inHours < 24) return '${diff.inHours}h ago';

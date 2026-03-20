@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import '../config/theme.dart';
-import '../providers/mock_data.dart';
+import '../providers/auth_provider.dart';
+import '../providers/device_provider.dart';
+import '../providers/alert_provider.dart';
+import '../providers/metrics_provider.dart';
 import 'home/home_screen.dart';
 import 'inventory/inventory_screen.dart';
 import 'analytics/analytics_screen.dart';
@@ -27,9 +31,47 @@ class _MainShellState extends State<MainShell> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    // Cargar datos después del primer frame para evitar notifyListeners durante build
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadData());
+  }
+
+  /// Carga inicial de datos + conexión WebSocket [RF-17]
+  Future<void> _loadData() async {
+    final deviceProv = context.read<DeviceProvider>();
+    final alertProv = context.read<AlertProvider>();
+    final metricsProv = context.read<MetricsProvider>();
+    final auth = context.read<AuthProvider>();
+
+    // Cargar datos iniciales en paralelo
+    await Future.wait([
+      deviceProv.fetchDevices(),
+      alertProv.fetchAlerts(),
+    ]);
+
+    // Métricas dependen de los agentes cargados
+    await metricsProv.fetchMetrics(
+      activeAgents: deviceProv.activeAgentCount,
+      totalAgents: deviceProv.totalAgentCount,
+      unseenAlerts: alertProv.unseenCount,
+    );
+
+    // Conectar WebSocket para real-time
+    final token = await auth.getToken();
+    if (token != null) {
+      metricsProv.startWebSocket(token);
+
+      // Escuchar WS para actualizar devices y alertas en tiempo real
+      metricsProv.addListener(() {
+        // El MetricsProvider ya notifica sus listeners cuando llega data WS
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final alertCount =
-        MockData.alerts.where((a) => !a.isRead).length;
+    final alertCount = context.watch<AlertProvider>().unseenCount;
 
     return Scaffold(
       backgroundColor: AppColors.base,

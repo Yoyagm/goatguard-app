@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import '../../config/theme.dart';
 import '../../models/alert.dart';
+import '../../providers/alert_provider.dart';
 import '../../providers/mock_data.dart';
 import '../../widgets/cards/alert_tile.dart';
 
@@ -15,15 +17,20 @@ class AlertsScreen extends StatefulWidget {
 class _AlertsScreenState extends State<AlertsScreen> {
   AlertSeverity? _filter;
 
-  List<NetworkAlert> get _filteredAlerts {
-    final alerts = MockData.alerts;
+  List<NetworkAlert> _applyFilter(List<NetworkAlert> alerts) {
     if (_filter == null) return alerts;
     return alerts.where((a) => a.severity == _filter).toList();
   }
 
   @override
   Widget build(BuildContext context) {
-    final alerts = _filteredAlerts;
+    final alertProv = context.watch<AlertProvider>();
+
+    // Fallback a MockData si la API aún no responde
+    final allAlerts = alertProv.alerts.isNotEmpty
+        ? alertProv.alerts
+        : MockData.alerts;
+    final alerts = _applyFilter(allAlerts);
     final unread = alerts.where((a) => !a.isRead).length;
 
     return Column(
@@ -103,13 +110,19 @@ class _AlertsScreenState extends State<AlertsScreen> {
               : RefreshIndicator(
                   color: AppColors.brand,
                   backgroundColor: AppColors.surface,
-                  onRefresh: () async =>
-                      await Future.delayed(const Duration(seconds: 1)),
+                  onRefresh: () => alertProv.fetchAlerts(),
                   child: ListView.builder(
                     itemCount: alerts.length,
                     padding: const EdgeInsets.only(bottom: 24),
-                    itemBuilder: (context, index) =>
-                        AlertTile(alert: alerts[index]),
+                    itemBuilder: (context, index) {
+                      final alert = alerts[index];
+                      return AlertTile(
+                        alert: alert,
+                        onSeen: alert.isRead
+                            ? null
+                            : () => alertProv.markAsSeen(alert.id),
+                      );
+                    },
                   ),
                 ),
         ),
