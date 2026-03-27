@@ -33,7 +33,8 @@ class LineMetricChart extends StatelessWidget {
       return FlSpot(e.key.toDouble(), e.value.value);
     }).toList();
 
-    final maxY = data.map((e) => e.value).reduce((a, b) => a > b ? a : b) * 1.2;
+    var maxY = data.map((e) => e.value).reduce((a, b) => a > b ? a : b) * 1.2;
+    if (maxY == 0) maxY = 1;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -69,6 +70,15 @@ class LineMetricChart extends StatelessWidget {
                 ),
                 titlesData: FlTitlesData(
                   leftTitles: AxisTitles(
+                    axisNameWidget: Text(
+                      unit,
+                      style: GoogleFonts.inter(
+                        color: AppColors.textTertiary,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    axisNameSize: 16,
                     sideTitles: SideTitles(
                       showTitles: true,
                       reservedSize: 40,
@@ -82,6 +92,15 @@ class LineMetricChart extends StatelessWidget {
                     ),
                   ),
                   bottomTitles: AxisTitles(
+                    axisNameWidget: Text(
+                      'Time',
+                      style: GoogleFonts.inter(
+                        color: AppColors.textTertiary,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    axisNameSize: 20,
                     sideTitles: SideTitles(
                       showTitles: true,
                       interval: (data.length / 5).ceilToDouble(),
