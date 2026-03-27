@@ -3,10 +3,14 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../config/theme.dart';
 import '../../config/helpers.dart';
+import '../../models/network_metrics.dart';
 import '../../providers/metrics_provider.dart';
 import '../../providers/mock_data.dart';
 import '../../widgets/charts/line_metric_chart.dart';
 import '../../widgets/charts/bar_metric_chart.dart';
+import '../../widgets/charts/isp_health_card.dart';
+import '../../widgets/charts/top_talkers_history_chart.dart';
+
 
 class AnalyticsScreen extends StatefulWidget {
   const AnalyticsScreen({super.key});
@@ -17,6 +21,49 @@ class AnalyticsScreen extends StatefulWidget {
 
 class _AnalyticsScreenState extends State<AnalyticsScreen> {
   String _timeRange = '1h';
+  bool _historyLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadHistory());
+  }
+
+  int get _hoursForRange {
+    switch (_timeRange) {
+      case '1h':
+        return 1;
+      case '6h':
+        return 6;
+      case '24h':
+        return 24;
+      case '7d':
+        return 168;
+      default:
+        return 1;
+    }
+  }
+
+  Future<void> _loadHistory() async {
+    setState(() => _historyLoading = true);
+    final prov = context.read<MetricsProvider>();
+    await Future.wait([
+      prov.fetchNetworkHistory(hours: _hoursForRange),
+      prov.fetchIspHealth(),
+
+      prov.fetchTopTalkersHistory(hours: _hoursForRange),
+    ]);
+    if (mounted) setState(() => _historyLoading = false);
+  }
+
+  List<TimeSeriesPoint> _toSeries(
+    List<NetworkSnapshot> snapshots,
+    double Function(NetworkSnapshot) selector,
+  ) {
+    return snapshots
+        .map((s) => TimeSeriesPoint(time: s.timestamp, value: selector(s)))
+        .toList();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -28,20 +75,21 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         ? metricsProv.topConsumers
         : MockData.topConsumers;
 
-    // TimeSeries: MockData como fallback — GET /metrics/history no implementado aún
-    // TODO(RF-17): reemplazar cuando el endpoint exista
-    final latencySeries = MockData.generateTimeSeries(
-      points: 30, baseValue: 35, variance: 20,
-    );
-    final lossSeries = MockData.generateTimeSeries(
-      points: 30, baseValue: 0.3, variance: 0.5,
-    );
-    final jitterSeries = MockData.generateTimeSeries(
-      points: 30, baseValue: 6, variance: 8, withSpike: true,
-    );
-    final dnsSeries = MockData.generateTimeSeries(
-      points: 30, baseValue: 40, variance: 25,
-    );
+    // TimeSeries: datos reales si hay historial, fallback a MockData
+    final history = metricsProv.networkHistory;
+    final hasHistory = history.isNotEmpty;
+
+    final latencySeries = hasHistory
+        ? _toSeries(history, (s) => s.ispLatencyAvg)
+        : MockData.generateTimeSeries(points: 30, baseValue: 35, variance: 20);
+    final lossSeries = hasHistory
+        ? _toSeries(history, (s) => s.packetLossPct)
+        : MockData.generateTimeSeries(
+            points: 30, baseValue: 0.3, variance: 0.5);
+    final jitterSeries = hasHistory
+        ? _toSeries(history, (s) => s.jitter)
+        : MockData.generateTimeSeries(
+            points: 30, baseValue: 6, variance: 8, withSpike: true);
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -70,7 +118,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                   borderRadius: BorderRadius.circular(10),
                 ),
                 showCheckmark: false,
-                onSelected: (_) => setState(() => _timeRange = range),
+                onSelected: (_) {
+                  setState(() => _timeRange = range);
+                  _loadHistory();
+                },
               ),
             );
           }).toList(),
@@ -123,7 +174,26 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           ),
         ),
 
+        // ISP Health Card
+        if (metricsProv.ispHealth != null) ...[
+          const SizedBox(height: 14),
+          IspHealthCard(data: metricsProv.ispHealth!),
+        ],
+
         const SizedBox(height: 14),
+
+        // Loading indicator for history
+        if (_historyLoading)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 14),
+            child: Center(
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          ),
 
         // ISP Latency Chart
         LineMetricChart(
@@ -161,19 +231,13 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
         const SizedBox(height: 14),
 
-        // DNS Response Time
-        LineMetricChart(
-          title: 'DNS Response Time',
-          data: dnsSeries,
-          lineColor: AppColors.chartBlue,
-          unit: 'ms',
-          warningThreshold: 100,
-          criticalThreshold: 200,
-        ),
+        // Top Talkers History
+        if (metricsProv.topTalkersHistory.isNotEmpty) ...[
+          TopTalkersHistoryChart(snapshots: metricsProv.topTalkersHistory),
+          const SizedBox(height: 14),
+        ],
 
-        const SizedBox(height: 14),
-
-        // Top Consumers
+        // Top Consumers (al final)
         TopConsumersChart(consumers: consumers),
 
         const SizedBox(height: 24),
@@ -196,12 +260,17 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               fontWeight: FontWeight.w500,
             ),
           ),
-          Text(
-            value,
-            style: GoogleFonts.jetBrainsMono(
-              color: valueColor,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
+          const SizedBox(width: 12),
+          Flexible(
+            child: Text(
+              value,
+              style: GoogleFonts.jetBrainsMono(
+                color: valueColor,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.end,
             ),
           ),
         ],

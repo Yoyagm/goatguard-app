@@ -72,6 +72,15 @@ class AlertProvider extends ChangeNotifier {
     }
   }
 
+  /// Insertar alerta recibida vía WebSocket push (`alert_created`)
+  void addAlertFromWs(Map<String, dynamic> data) {
+    final alertJson = data['alert'] as Map<String, dynamic>? ?? data;
+    final alert = NetworkAlert.fromJson(alertJson);
+    _alerts.insert(0, alert);
+    _unseenCount++;
+    notifyListeners();
+  }
+
   /// Actualizar conteo desde WebSocket
   void updateUnseenCount(int count) {
     if (_unseenCount != count) {
