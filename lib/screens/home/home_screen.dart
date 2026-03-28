@@ -36,7 +36,10 @@ class HomeScreen extends StatelessWidget {
       color: AppColors.brand,
       backgroundColor: AppColors.surface,
       onRefresh: () async {
-        await deviceProv.fetchDevices();
+        await Future.wait([
+          deviceProv.fetchDevices(),
+          deviceProv.fetchAgents(),
+        ]);
         await metricsProv.fetchMetrics(
           activeAgents: deviceProv.activeAgentCount,
           totalAgents: deviceProv.totalAgentCount,

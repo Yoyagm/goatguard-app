@@ -25,8 +25,26 @@ class Agent {
     required this.lastHeartbeat,
   });
 
-  /// Factoría desde dispositivo con agente (GET /devices/{id})
-  /// Workaround: GET /agents no existe aún, se extrae de device+metrics
+  /// Factoría desde GET /agents/ [RF-037]
+  factory Agent.fromJson(Map<String, dynamic> json) {
+    return Agent(
+      id: json['uid']?.toString() ?? json['id'].toString(),
+      hostname: (json['hostname'] as String?) ?? 'Unknown',
+      ipAddress: json['ip'] as String? ?? '',
+      macAddress: '',
+      status: (json['status'] as String?) == 'active'
+          ? AgentStatus.active
+          : AgentStatus.inactive,
+      cpuUsage: 0,
+      ramUsage: 0,
+      linkSpeedMbps: 0,
+      lastHeartbeat: json['last_heartbeat'] != null
+          ? parseApiTimestamp(json['last_heartbeat'] as String)
+          : DateTime.now(),
+    );
+  }
+
+  /// Factoría legacy desde GET /devices/{id} — mantener para compatibilidad
   factory Agent.fromDeviceJson(Map<String, dynamic> deviceJson) {
     final agentJson = deviceJson['agent'] as Map<String, dynamic>?;
     final metricsJson = deviceJson['metrics'] as Map<String, dynamic>?;

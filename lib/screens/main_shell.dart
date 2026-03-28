@@ -46,8 +46,12 @@ class _MainShellState extends State<MainShell> {
     final metricsProv = context.read<MetricsProvider>();
     final auth = context.read<AuthProvider>();
 
-    // Cargar datos iniciales en paralelo
-    await Future.wait([deviceProv.fetchDevices(), alertProv.fetchAlerts()]);
+    // Cargar datos iniciales en paralelo [RF-037: fetchAgents directo]
+    await Future.wait([
+      deviceProv.fetchDevices(),
+      deviceProv.fetchAgents(),
+      alertProv.fetchAlerts(),
+    ]);
 
     // Métricas dependen de los agentes cargados
     await metricsProv.fetchMetrics(
