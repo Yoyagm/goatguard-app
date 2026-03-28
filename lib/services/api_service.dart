@@ -143,6 +143,50 @@ class ApiService {
     await _request(() => _dio.patch('/alerts/$alertId/seen'));
   }
 
+  // ─── Dashboard ─────────────────────────────────────────
+
+  Future<Map<String, dynamic>> getDashboardSummary() async {
+    return _request(() => _dio.get('/dashboard/summary'));
+  }
+
+  // ─── Network (history / ISP / traffic) ────────────────
+
+  Future<List<dynamic>> getNetworkHistory({int hours = 4}) async {
+    return _request(
+        () => _dio.get('/network/history', queryParameters: {'hours': hours}));
+  }
+
+  Future<Map<String, dynamic>> getIspHealth() async {
+    return _request(() => _dio.get('/network/isp-health'));
+  }
+
+  Future<Map<String, dynamic>> getTrafficDistribution() async {
+    return _request(() => _dio.get('/network/traffic-distribution'));
+  }
+
+  Future<List<dynamic>> getTopTalkersHistory({int hours = 4}) async {
+    return _request(() => _dio.get('/network/top-talkers/history',
+        queryParameters: {'hours': hours}));
+  }
+
+  // ─── Devices (history / connections / comparison) ─────
+
+  Future<List<dynamic>> getDeviceHistory(int deviceId,
+      {int hours = 4}) async {
+    return _request(() => _dio.get('/devices/$deviceId/history',
+        queryParameters: {'hours': hours}));
+  }
+
+  Future<List<dynamic>> getDeviceConnections(int deviceId) async {
+    return _request(() => _dio.get('/devices/$deviceId/connections'));
+  }
+
+  Future<List<dynamic>> getDeviceComparison(
+      {String metric = 'bandwidth_in'}) async {
+    return _request(() => _dio
+        .get('/devices/comparison', queryParameters: {'metric': metric}));
+  }
+
   // ─── WebSocket URL builder ──────────────────────────────
 
   String getWebSocketUrl(String token) {

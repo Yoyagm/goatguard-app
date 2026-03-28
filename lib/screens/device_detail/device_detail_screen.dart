@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../config/theme.dart';
 import '../../config/helpers.dart';
 import '../../models/device.dart';
+import '../../models/network_metrics.dart';
 import '../../providers/alert_provider.dart';
 import '../../providers/device_provider.dart';
 import '../../providers/mock_data.dart';
@@ -12,14 +13,50 @@ import '../../widgets/common/status_chip.dart';
 import '../../widgets/charts/line_metric_chart.dart';
 import '../../widgets/cards/alert_tile.dart';
 
-class DeviceDetailScreen extends StatelessWidget {
+class DeviceDetailScreen extends StatefulWidget {
   final Device device;
 
   const DeviceDetailScreen({super.key, required this.device});
 
   @override
+  State<DeviceDetailScreen> createState() => _DeviceDetailScreenState();
+}
+
+class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
+  bool _historyLoading = false;
+  bool _connectionsLoading = false;
+
+  Device get device => widget.device;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadDeviceData());
+  }
+
+  Future<void> _loadDeviceData() async {
+    final deviceProv = context.read<DeviceProvider>();
+    final deviceId = int.parse(device.id);
+
+    setState(() {
+      _historyLoading = true;
+      _connectionsLoading = true;
+    });
+
+    await Future.wait([
+      deviceProv.fetchDeviceHistory(deviceId).then((_) {
+        if (mounted) setState(() => _historyLoading = false);
+      }),
+      deviceProv.fetchDeviceConnections(deviceId).then((_) {
+        if (mounted) setState(() => _connectionsLoading = false);
+      }),
+    ]);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final isAgent = device.coverage == DeviceCoverage.withAgent;
+    final deviceProv = context.watch<DeviceProvider>();
 
     // Alertas desde provider; filtro client-side porque GET /alerts no soporta device_id
     final alertProv = context.watch<AlertProvider>();
@@ -30,8 +67,11 @@ class DeviceDetailScreen extends StatelessWidget {
         .where((a) => a.deviceIp == device.ipAddress)
         .toList();
 
-    // TimeSeries: MockData — GET /metrics/device/{id} no implementado aún
-    // TODO(RF-17): reemplazar cuando el endpoint exista
+    // Device history: datos reales o fallback a mock
+    final history = deviceProv.deviceHistory;
+    final hasHistory = history.isNotEmpty;
+
+    final connections = deviceProv.deviceConnections;
 
     return Scaffold(
       backgroundColor: AppColors.base,
@@ -219,15 +259,33 @@ class DeviceDetailScreen extends StatelessWidget {
             ),
             const SizedBox(height: 12),
 
-            // TCP Retransmissions Chart (MockData — sin historial en API)
+            // Loading indicator for history
+            if (_historyLoading)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 12),
+                child: Center(
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              ),
+
+            // TCP Retransmissions Chart — real data or mock fallback
             LineMetricChart(
               title: 'TCP Retransmissions (1h)',
-              data: MockData.generateTimeSeries(
-                points: 30,
-                baseValue: 5,
-                variance: 8,
-                withSpike: true,
-              ),
+              data: hasHistory
+                  ? history
+                      .map((s) => TimeSeriesPoint(
+                          time: s.timestamp, value: s.tcpRetransmissions))
+                      .toList()
+                  : MockData.generateTimeSeries(
+                      points: 30,
+                      baseValue: 5,
+                      variance: 8,
+                      withSpike: true,
+                    ),
               lineColor: AppColors.chartRed,
               unit: 'rt/m',
               warningThreshold: 5,
@@ -235,19 +293,162 @@ class DeviceDetailScreen extends StatelessWidget {
             ),
             const SizedBox(height: 12),
 
-            // Speed Chart (MockData — sin historial en API)
+            // Bandwidth Chart — real data or mock fallback
             LineMetricChart(
-              title: 'Bandwidth Usage (1h)',
-              data: MockData.generateTimeSeries(
-                points: 30,
-                baseValue: 120,
-                variance: 60,
-              ),
+              title: 'Bandwidth In (1h)',
+              data: hasHistory
+                  ? history
+                      .map((s) => TimeSeriesPoint(
+                          time: s.timestamp, value: s.bandwidthIn))
+                      .toList()
+                  : MockData.generateTimeSeries(
+                      points: 30,
+                      baseValue: 120,
+                      variance: 60,
+                    ),
               lineColor: AppColors.chartTeal,
               unit: 'Mbps',
             ),
             const SizedBox(height: 12),
+
+            // CPU History Chart (solo si hay datos reales)
+            if (hasHistory)
+              LineMetricChart(
+                title: 'CPU Usage (1h)',
+                data: history
+                    .map((s) =>
+                        TimeSeriesPoint(time: s.timestamp, value: s.cpuPct))
+                    .toList(),
+                lineColor: AppColors.chartOrange,
+                unit: '%',
+                warningThreshold: 70,
+                criticalThreshold: 90,
+              ),
+            if (hasHistory) const SizedBox(height: 12),
+
+            // RAM History Chart (solo si hay datos reales)
+            if (hasHistory)
+              LineMetricChart(
+                title: 'RAM Usage (1h)',
+                data: history
+                    .map((s) =>
+                        TimeSeriesPoint(time: s.timestamp, value: s.ramPct))
+                    .toList(),
+                lineColor: AppColors.chartBlue,
+                unit: '%',
+                warningThreshold: 70,
+                criticalThreshold: 90,
+              ),
+            if (hasHistory) const SizedBox(height: 12),
           ],
+
+          // External Connections
+          if (isAgent && connections.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(
+                children: [
+                  Text(
+                    'External Connections',
+                    style: GoogleFonts.inter(
+                      color: AppColors.textPrimary,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppColors.brand.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      '${connections.length}',
+                      style: GoogleFonts.jetBrainsMono(
+                        color: AppColors.brand,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            ...connections.map((conn) => Container(
+                  margin: const EdgeInsets.only(bottom: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(12),
+                    border:
+                        Border.all(color: const Color(0xFF30363D), width: 0.5),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              conn.displayName,
+                              style: GoogleFonts.jetBrainsMono(
+                                color: AppColors.textPrimary,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${conn.proto.toUpperCase()} :${conn.dstPort}',
+                              style: GoogleFonts.inter(
+                                color: AppColors.textTertiary,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            conn.bytesFormatted,
+                            style: GoogleFonts.jetBrainsMono(
+                              color: AppColors.brand,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            '${conn.connectionCount} conn',
+                            style: GoogleFonts.inter(
+                              color: AppColors.textTertiary,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                )),
+            const SizedBox(height: 12),
+          ],
+
+          if (isAgent && _connectionsLoading)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 12),
+              child: Center(
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            ),
 
           // Alerts
           if (alerts.isNotEmpty) ...[

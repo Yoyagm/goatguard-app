@@ -9,6 +9,8 @@ class DeviceProvider extends ChangeNotifier {
 
   List<Device> _devices = [];
   List<Agent> _agents = [];
+  List<DeviceSnapshot> _deviceHistory = [];
+  List<DeviceConnection> _deviceConnections = [];
   bool _loading = false;
   String? _error;
 
@@ -16,6 +18,8 @@ class DeviceProvider extends ChangeNotifier {
 
   List<Device> get devices => _devices;
   List<Agent> get agents => _agents;
+  List<DeviceSnapshot> get deviceHistory => _deviceHistory;
+  List<DeviceConnection> get deviceConnections => _deviceConnections;
   bool get loading => _loading;
   String? get error => _error;
 
@@ -72,6 +76,34 @@ class DeviceProvider extends ChangeNotifier {
       _error = e.message;
       notifyListeners();
       return null;
+    }
+  }
+
+  // ─── Nuevos métodos: history & connections ────────────
+
+  Future<void> fetchDeviceHistory(int deviceId, {int hours = 4}) async {
+    try {
+      final raw = await _api.getDeviceHistory(deviceId, hours: hours);
+      _deviceHistory = raw
+          .map((j) => DeviceSnapshot.fromJson(j as Map<String, dynamic>))
+          .toList();
+      notifyListeners();
+    } on ApiException catch (e) {
+      _error = e.message;
+      notifyListeners();
+    }
+  }
+
+  Future<void> fetchDeviceConnections(int deviceId) async {
+    try {
+      final raw = await _api.getDeviceConnections(deviceId);
+      _deviceConnections = raw
+          .map((j) => DeviceConnection.fromJson(j as Map<String, dynamic>))
+          .toList();
+      notifyListeners();
+    } on ApiException catch (e) {
+      _error = e.message;
+      notifyListeners();
     }
   }
 

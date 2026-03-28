@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -21,6 +22,7 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   int _currentIndex = 0;
+  StreamSubscription<Map<String, dynamic>>? _wsAlertSub;
 
   final _screens = const [
     HomeScreen(),
@@ -59,11 +61,47 @@ class _MainShellState extends State<MainShell> {
     if (token != null) {
       metricsProv.startWebSocket(token);
 
-      // Escuchar WS para actualizar devices y alertas en tiempo real
-      metricsProv.addListener(() {
-        // El MetricsProvider ya notifica sus listeners cuando llega data WS
+      // Suscribirse al stream de alertas push vía WS
+      _wsAlertSub = metricsProv.wsAlerts.listen((data) {
+        alertProv.addAlertFromWs(data);
+
+        // SnackBar para alertas críticas
+        final severity =
+            (data['alert'] as Map<String, dynamic>?)?['severity'] as String? ??
+                data['severity'] as String? ??
+                '';
+        if (severity == 'critical' || severity == 'high') {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                backgroundColor: AppColors.critical,
+                behavior: SnackBarBehavior.floating,
+                duration: const Duration(seconds: 4),
+                content: Text(
+                  'New alert: ${(data['alert'] as Map<String, dynamic>?)?['description'] ?? 'Critical alert detected'}',
+                  style: GoogleFonts.inter(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                action: SnackBarAction(
+                  label: 'View',
+                  textColor: Colors.white,
+                  onPressed: () => setState(() => _currentIndex = 3),
+                ),
+              ),
+            );
+          }
+        }
       });
     }
+  }
+
+  @override
+  void dispose() {
+    _wsAlertSub?.cancel();
+    super.dispose();
   }
 
   @override
