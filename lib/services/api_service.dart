@@ -143,6 +143,14 @@ class ApiService {
     await _request(() => _dio.patch('/alerts/$alertId/seen'));
   }
 
+  // ─── Agents [RF-037] ─────────────────────────────────────
+
+  Future<List<dynamic>> getAgents({String? status}) async {
+    final params = <String, dynamic>{};
+    if (status != null) params['status'] = status;
+    return _request(() => _dio.get('/agents/', queryParameters: params));
+  }
+
   // ─── Dashboard ─────────────────────────────────────────
 
   Future<Map<String, dynamic>> getDashboardSummary() async {

@@ -30,7 +30,7 @@ class DeviceProvider extends ChangeNotifier {
       _agents.where((a) => a.status == AgentStatus.active).length;
   int get totalAgentCount => _agents.length;
 
-  /// Cargar dispositivos desde la API + extraer agentes de devices con has_agent
+  /// Cargar dispositivos desde la API [RF-18]
   Future<void> fetchDevices() async {
     _loading = true;
     _error = null;
@@ -41,28 +41,25 @@ class DeviceProvider extends ChangeNotifier {
       _devices = rawDevices
           .map((json) => Device.fromJson(json as Map<String, dynamic>))
           .toList();
-
-      // Extraer agentes de dispositivos con agente (workaround: GET /agents no existe)
-      // Para cada device con has_agent, obtenemos el detalle que incluye agent+metrics
-      final agentDevices = _devices.where(
-        (d) => d.coverage == DeviceCoverage.withAgent,
-      );
-      final agentList = <Agent>[];
-      for (final dev in agentDevices) {
-        try {
-          final detail = await _api.getDevice(int.parse(dev.id));
-          agentList.add(Agent.fromDeviceJson(detail));
-        } on ApiException {
-          // Si falla un device, continuamos con los demás
-        }
-      }
-      _agents = agentList;
-
       _loading = false;
       notifyListeners();
     } on ApiException catch (e) {
       _error = e.message;
       _loading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Cargar agentes desde GET /agents [RF-037]
+  Future<void> fetchAgents({String? status}) async {
+    try {
+      final rawAgents = await _api.getAgents(status: status);
+      _agents = rawAgents
+          .map((json) => Agent.fromJson(json as Map<String, dynamic>))
+          .toList();
+      notifyListeners();
+    } on ApiException catch (e) {
+      _error = e.message;
       notifyListeners();
     }
   }
