@@ -80,3 +80,17 @@ goatguard-server/zeek_output/
 
 # Compressed
 *.zip
+
+# Documentación de diseño (local, no va al repo de la app)
+*.csv
+*.png
+!android/**/*.png
+*.svg
+*.mdj
+definicion.md
+diccionario_de_datos.md
+requerimientosgg.md
+riesgosgg.csv
+docker-compose.yml
+BACKLOG_REFINEMENT.md
+CLAUDE.md
