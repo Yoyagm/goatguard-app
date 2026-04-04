@@ -58,8 +58,9 @@ class DeviceComparisonChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final maxVal =
-        devices.isEmpty ? 1.0 : devices.map((d) => d.value).reduce((a, b) => a > b ? a : b);
+    final maxVal = devices.isEmpty
+        ? 1.0
+        : devices.map((d) => d.value).reduce((a, b) => a > b ? a : b);
     final unit = _units[metric] ?? '';
 
     return Container(
@@ -128,7 +129,9 @@ class DeviceComparisonChart extends StatelessWidget {
             ...devices.asMap().entries.map((entry) {
               final i = entry.key;
               final d = entry.value;
-              final ratio = maxVal > 0 ? (d.value / maxVal).clamp(0.0, 1.0) : 0.0;
+              final ratio = maxVal > 0
+                  ? (d.value / maxVal).clamp(0.0, 1.0)
+                  : 0.0;
               final color = _colors[i % _colors.length];
 
               return Padding(

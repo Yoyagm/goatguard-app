@@ -15,6 +15,20 @@ from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
 
+class RecentConnection(Base):
+    """External connections seen in the latest analysis cycle."""
+    __tablename__ = "recent_connection"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    device_id = Column(Integer, ForeignKey("device.id"), nullable=False)
+    dst_ip = Column(String(45), nullable=False)
+    dst_hostname = Column(String(255), nullable=True)
+    dst_port = Column(Integer, nullable=False)
+    proto = Column(String(50), nullable=False)
+    total_bytes = Column(BigInteger, nullable=False, default=0)
+    connection_count = Column(Integer, nullable=False, default=0)
+    last_seen = Column(DateTime, nullable=False, default=datetime.utcnow)
+    
 class Network(Base):
     """A monitored LAN segment."""
     __tablename__ = "network"
@@ -150,8 +164,25 @@ class User(Base):
     password_hash = Column(String(255), nullable=False)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
+    # 2FA TOTP [RF-13]
+    totp_secret_enc = Column(String(500), nullable=True)
+    totp_enabled = Column(Boolean, nullable=False, default=False)
+    totp_enrolled_at = Column(DateTime(timezone=True), nullable=True)
+    totp_last_used_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Invalidación de tokens tras cambio de contraseña [RF-13]
+    password_changed_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Recuperación de contraseña [RF-13]
+    recovery_code_hash = Column(String(255), nullable=True)
+    recovery_code_attempts = Column(Integer, nullable=False, default=0)
+    recovery_code_used = Column(Boolean, nullable=False, default=False)
+
     sessions = relationship("Session", back_populates="user")
     push_tokens = relationship("PushToken", back_populates="user")
+    totp_backup_codes = relationship(
+        "TotpBackupCode", back_populates="user", cascade="all, delete-orphan",
+    )
 
 class Session(Base):
     """Active JWT session for a user."""
@@ -250,6 +281,31 @@ class MLPrediction(Base):
     network = relationship("Network")
     device = relationship("Device")
 
+
+class InvitationToken(Base):
+    """Token de invitación para registro de administrador [RF-13]."""
+    __tablename__ = "invitation_token"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    token_hash = Column(String(255), nullable=False, unique=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=False)
+    used = Column(Boolean, nullable=False, default=False)
+    used_at = Column(DateTime, nullable=True)
+
+
+class TotpBackupCode(Base):
+    """Código de respaldo TOTP para acceso de emergencia [RF-13]."""
+    __tablename__ = "totp_backup_code"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("user.id"), nullable=False)
+    code_hash = Column(String(255), nullable=False)
+    used = Column(Boolean, nullable=False, default=False)
+    used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    user = relationship("User", back_populates="totp_backup_codes")
 
 class Insight(Base):
     """Human-readable observation about network or device state."""

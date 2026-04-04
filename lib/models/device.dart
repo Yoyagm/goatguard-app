@@ -222,7 +222,8 @@ class DeviceConnection {
 
   String get bytesFormatted {
     if (totalBytes < 1024) return '$totalBytes B';
-    if (totalBytes < 1048576) return '${(totalBytes / 1024).toStringAsFixed(1)} KB';
+    if (totalBytes < 1048576)
+      return '${(totalBytes / 1024).toStringAsFixed(1)} KB';
     return '${(totalBytes / 1048576).toStringAsFixed(1)} MB';
   }
 }

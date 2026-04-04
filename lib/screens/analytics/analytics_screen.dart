@@ -11,7 +11,6 @@ import '../../widgets/charts/bar_metric_chart.dart';
 import '../../widgets/charts/isp_health_card.dart';
 import '../../widgets/charts/top_talkers_history_chart.dart';
 
-
 class AnalyticsScreen extends StatefulWidget {
   const AnalyticsScreen({super.key});
 
@@ -85,11 +84,18 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     final lossSeries = hasHistory
         ? _toSeries(history, (s) => s.packetLossPct)
         : MockData.generateTimeSeries(
-            points: 30, baseValue: 0.3, variance: 0.5);
+            points: 30,
+            baseValue: 0.3,
+            variance: 0.5,
+          );
     final jitterSeries = hasHistory
         ? _toSeries(history, (s) => s.jitter)
         : MockData.generateTimeSeries(
-            points: 30, baseValue: 6, variance: 8, withSpike: true);
+            points: 30,
+            baseValue: 6,
+            variance: 8,
+            withSpike: true,
+          );
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -142,8 +148,11 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             children: [
               Row(
                 children: [
-                  const Icon(Icons.analytics_rounded,
-                      color: AppColors.brand, size: 20),
+                  const Icon(
+                    Icons.analytics_rounded,
+                    color: AppColors.brand,
+                    size: 20,
+                  ),
                   const SizedBox(width: 8),
                   Text(
                     'Network Summary',
@@ -156,20 +165,37 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 ],
               ),
               const SizedBox(height: 14),
-              _summaryRow('ISP Health', '${metrics.healthScore.toInt()}%',
-                  getHealthColor(metrics.healthScore)),
-              _summaryRow('Average Latency', '${metrics.ispLatencyMs.toInt()} ms',
-                  getLatencyColor(metrics.ispLatencyMs)),
               _summaryRow(
-                  'Packet Loss',
-                  '${metrics.packetLossPercent}%',
-                  getPacketLossColor(metrics.packetLossPercent)),
-              _summaryRow('Jitter', '${metrics.jitterMs.toInt()} ms',
-                  getJitterColor(metrics.jitterMs)),
-              _summaryRow('DNS Response', '${metrics.dnsResponseTimeMs.toInt()} ms',
-                  getDnsColor(metrics.dnsResponseTimeMs)),
-              _summaryRow('Top Consumer', metrics.topConsumerName,
-                  AppColors.brand, isLast: true),
+                'ISP Health',
+                '${metrics.healthScore.toInt()}%',
+                getHealthColor(metrics.healthScore),
+              ),
+              _summaryRow(
+                'Average Latency',
+                '${metrics.ispLatencyMs.toInt()} ms',
+                getLatencyColor(metrics.ispLatencyMs),
+              ),
+              _summaryRow(
+                'Packet Loss',
+                '${metrics.packetLossPercent}%',
+                getPacketLossColor(metrics.packetLossPercent),
+              ),
+              _summaryRow(
+                'Jitter',
+                '${metrics.jitterMs.toInt()} ms',
+                getJitterColor(metrics.jitterMs),
+              ),
+              _summaryRow(
+                'DNS Response',
+                '${metrics.dnsResponseTimeMs.toInt()} ms',
+                getDnsColor(metrics.dnsResponseTimeMs),
+              ),
+              _summaryRow(
+                'Top Consumer',
+                metrics.topConsumerName,
+                AppColors.brand,
+                isLast: true,
+              ),
             ],
           ),
         ),
@@ -245,8 +271,12 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     );
   }
 
-  Widget _summaryRow(String label, String value, Color valueColor,
-      {bool isLast = false}) {
+  Widget _summaryRow(
+    String label,
+    String value,
+    Color valueColor, {
+    bool isLast = false,
+  }) {
     return Padding(
       padding: EdgeInsets.only(bottom: isLast ? 0 : 10),
       child: Row(
