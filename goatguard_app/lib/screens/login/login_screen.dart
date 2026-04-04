@@ -31,7 +31,23 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = false);
 
     if (success) {
-      Navigator.of(context).pushReplacementNamed('/main');
+      final state = auth.state;
+      if (!mounted) return;
+      switch (state) {
+        case AuthState.pendingTotp:
+          Navigator.of(context).pushReplacementNamed('/totp');
+        case AuthState.pendingEnrollment:
+          Navigator.of(context).pushReplacementNamed(
+            '/totp-enrollment',
+            arguments: {
+              'totp_uri': auth.pendingTotpUri ?? '',
+              'qr_png_base64': auth.pendingQrBase64 ?? '',
+            },
+          );
+        default:
+          Navigator.of(context).pushReplacementNamed('/main');
+      }
+      return;
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -116,11 +132,17 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 8),
               TextField(
                 controller: _usernameController,
-                style: GoogleFonts.inter(color: AppColors.textPrimary, fontSize: 15),
+                style: GoogleFonts.inter(
+                  color: AppColors.textPrimary,
+                  fontSize: 15,
+                ),
                 decoration: const InputDecoration(
                   hintText: 'admin',
-                  prefixIcon: Icon(Icons.person_outline_rounded,
-                      color: AppColors.textTertiary, size: 20),
+                  prefixIcon: Icon(
+                    Icons.person_outline_rounded,
+                    color: AppColors.textTertiary,
+                    size: 20,
+                  ),
                 ),
               ),
               const SizedBox(height: 20),
@@ -136,12 +158,18 @@ class _LoginScreenState extends State<LoginScreen> {
               TextField(
                 controller: _passwordController,
                 obscureText: _obscurePassword,
-                style: GoogleFonts.inter(color: AppColors.textPrimary, fontSize: 15),
+                style: GoogleFonts.inter(
+                  color: AppColors.textPrimary,
+                  fontSize: 15,
+                ),
                 onSubmitted: (_) => _handleLogin(),
                 decoration: InputDecoration(
                   hintText: 'Enter password',
-                  prefixIcon: const Icon(Icons.lock_outline_rounded,
-                      color: AppColors.textTertiary, size: 20),
+                  prefixIcon: const Icon(
+                    Icons.lock_outline_rounded,
+                    color: AppColors.textTertiary,
+                    size: 20,
+                  ),
                   suffixIcon: IconButton(
                     icon: Icon(
                       _obscurePassword
@@ -166,8 +194,9 @@ class _LoginScreenState extends State<LoginScreen> {
                           width: 20,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            valueColor:
-                                AlwaysStoppedAnimation<Color>(AppColors.base),
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              AppColors.base,
+                            ),
                           ),
                         )
                       : Text(
@@ -181,11 +210,27 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 24),
               Center(
-                child: Text(
-                  'Secured with JWT Authentication',
-                  style: GoogleFonts.inter(
-                    color: AppColors.textTertiary,
-                    fontSize: 12,
+                child: TextButton(
+                  onPressed: () =>
+                      Navigator.pushNamed(context, '/forgot-password'),
+                  child: Text(
+                    '¿Olvidaste tu contraseña?',
+                    style: GoogleFonts.inter(
+                      color: AppColors.textSecondary,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              ),
+              Center(
+                child: TextButton(
+                  onPressed: () => Navigator.pushNamed(context, '/register'),
+                  child: Text(
+                    'Primera configuración — Ingresar código de invitación',
+                    style: GoogleFonts.inter(
+                      color: AppColors.brand,
+                      fontSize: 13,
+                    ),
                   ),
                 ),
               ),
