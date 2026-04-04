@@ -25,10 +25,16 @@ class _SplashScreenState extends State<SplashScreen>
       duration: const Duration(milliseconds: 1500),
     );
     _fadeIn = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: _controller, curve: const Interval(0, 0.6, curve: Curves.easeOut)),
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0, 0.6, curve: Curves.easeOut),
+      ),
     );
     _scaleUp = Tween<double>(begin: 0.8, end: 1).animate(
-      CurvedAnimation(parent: _controller, curve: const Interval(0, 0.6, curve: Curves.easeOut)),
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0, 0.6, curve: Curves.easeOut),
+      ),
     );
     _controller.forward();
 
@@ -44,10 +50,21 @@ class _SplashScreenState extends State<SplashScreen>
     if (!mounted) return;
 
     final auth = context.read<AuthProvider>();
-    if (auth.isAuthenticated) {
-      Navigator.of(context).pushReplacementNamed('/main');
-    } else {
-      Navigator.of(context).pushReplacementNamed('/login');
+    switch (auth.state) {
+      case AuthState.authenticated:
+        Navigator.of(context).pushReplacementNamed('/main');
+      case AuthState.pendingTotp:
+        Navigator.of(context).pushReplacementNamed('/totp');
+      case AuthState.pendingEnrollment:
+        Navigator.of(context).pushReplacementNamed(
+          '/totp-enrollment',
+          arguments: {
+            'totp_uri': auth.pendingTotpUri ?? '',
+            'qr_png_base64': auth.pendingQrBase64 ?? '',
+          },
+        );
+      default:
+        Navigator.of(context).pushReplacementNamed('/login');
     }
   }
 
@@ -67,10 +84,7 @@ class _SplashScreenState extends State<SplashScreen>
           builder: (context, child) {
             return Opacity(
               opacity: _fadeIn.value,
-              child: Transform.scale(
-                scale: _scaleUp.value,
-                child: child,
-              ),
+              child: Transform.scale(scale: _scaleUp.value, child: child),
             );
           },
           child: Column(
@@ -82,7 +96,10 @@ class _SplashScreenState extends State<SplashScreen>
                 decoration: BoxDecoration(
                   color: AppColors.brand.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(30),
-                  border: Border.all(color: AppColors.brand.withValues(alpha: 0.3), width: 2),
+                  border: Border.all(
+                    color: AppColors.brand.withValues(alpha: 0.3),
+                    width: 2,
+                  ),
                 ),
                 child: const Icon(
                   Icons.shield_rounded,
