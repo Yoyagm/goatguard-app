@@ -277,9 +277,13 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
               title: 'TCP Retransmissions (1h)',
               data: hasHistory
                   ? history
-                      .map((s) => TimeSeriesPoint(
-                          time: s.timestamp, value: s.tcpRetransmissions))
-                      .toList()
+                        .map(
+                          (s) => TimeSeriesPoint(
+                            time: s.timestamp,
+                            value: s.tcpRetransmissions,
+                          ),
+                        )
+                        .toList()
                   : MockData.generateTimeSeries(
                       points: 30,
                       baseValue: 5,
@@ -298,9 +302,13 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
               title: 'Bandwidth In (1h)',
               data: hasHistory
                   ? history
-                      .map((s) => TimeSeriesPoint(
-                          time: s.timestamp, value: s.bandwidthIn))
-                      .toList()
+                        .map(
+                          (s) => TimeSeriesPoint(
+                            time: s.timestamp,
+                            value: s.bandwidthIn,
+                          ),
+                        )
+                        .toList()
                   : MockData.generateTimeSeries(
                       points: 30,
                       baseValue: 120,
@@ -316,8 +324,10 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
               LineMetricChart(
                 title: 'CPU Usage (1h)',
                 data: history
-                    .map((s) =>
-                        TimeSeriesPoint(time: s.timestamp, value: s.cpuPct))
+                    .map(
+                      (s) =>
+                          TimeSeriesPoint(time: s.timestamp, value: s.cpuPct),
+                    )
                     .toList(),
                 lineColor: AppColors.chartOrange,
                 unit: '%',
@@ -331,8 +341,10 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
               LineMetricChart(
                 title: 'RAM Usage (1h)',
                 data: history
-                    .map((s) =>
-                        TimeSeriesPoint(time: s.timestamp, value: s.ramPct))
+                    .map(
+                      (s) =>
+                          TimeSeriesPoint(time: s.timestamp, value: s.ramPct),
+                    )
                     .toList(),
                 lineColor: AppColors.chartBlue,
                 unit: '%',
@@ -358,8 +370,10 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
                   ),
                   const SizedBox(width: 8),
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.brand.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(6),
@@ -376,55 +390,39 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
                 ],
               ),
             ),
-            ...connections.map((conn) => Container(
-                  margin: const EdgeInsets.only(bottom: 6),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(12),
-                    border:
-                        Border.all(color: const Color(0xFF30363D), width: 0.5),
+            ...connections.map(
+              (conn) => Container(
+                margin: const EdgeInsets.only(bottom: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: const Color(0xFF30363D),
+                    width: 0.5,
                   ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              conn.displayName,
-                              style: GoogleFonts.jetBrainsMono(
-                                color: AppColors.textPrimary,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              '${conn.proto.toUpperCase()} :${conn.dstPort}',
-                              style: GoogleFonts.inter(
-                                color: AppColors.textTertiary,
-                                fontSize: 11,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            conn.bytesFormatted,
+                            conn.displayName,
                             style: GoogleFonts.jetBrainsMono(
-                              color: AppColors.brand,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
+                              color: AppColors.textPrimary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
                             ),
+                            overflow: TextOverflow.ellipsis,
                           ),
+                          const SizedBox(height: 2),
                           Text(
-                            '${conn.connectionCount} conn',
+                            '${conn.proto.toUpperCase()} :${conn.dstPort}',
                             style: GoogleFonts.inter(
                               color: AppColors.textTertiary,
                               fontSize: 11,
@@ -432,9 +430,31 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
                           ),
                         ],
                       ),
-                    ],
-                  ),
-                )),
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          conn.bytesFormatted,
+                          style: GoogleFonts.jetBrainsMono(
+                            color: AppColors.brand,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        Text(
+                          '${conn.connectionCount} conn',
+                          style: GoogleFonts.inter(
+                            color: AppColors.textTertiary,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
             const SizedBox(height: 12),
           ],
 
