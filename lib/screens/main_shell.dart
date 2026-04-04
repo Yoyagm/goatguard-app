@@ -72,8 +72,8 @@ class _MainShellState extends State<MainShell> {
         // SnackBar para alertas críticas
         final severity =
             (data['alert'] as Map<String, dynamic>?)?['severity'] as String? ??
-                data['severity'] as String? ??
-                '';
+            data['severity'] as String? ??
+            '';
         if (severity == 'critical' || severity == 'high') {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(

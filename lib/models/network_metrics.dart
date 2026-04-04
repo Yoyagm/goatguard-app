@@ -232,11 +232,14 @@ class IspHealthDetail {
   factory IspHealthDetail.fromJson(Map<String, dynamic> json) {
     return IspHealthDetail(
       latency: IspMetricDetail.fromJson(
-          json['latency'] as Map<String, dynamic>? ?? {}),
+        json['latency'] as Map<String, dynamic>? ?? {},
+      ),
       packetLoss: IspMetricDetail.fromJson(
-          json['packet_loss'] as Map<String, dynamic>? ?? {}),
+        json['packet_loss'] as Map<String, dynamic>? ?? {},
+      ),
       jitter: IspMetricDetail.fromJson(
-          json['jitter'] as Map<String, dynamic>? ?? {}),
+        json['jitter'] as Map<String, dynamic>? ?? {},
+      ),
     );
   }
 }
@@ -322,14 +325,16 @@ class TrafficDistribution {
 
   factory TrafficDistribution.fromJson(Map<String, dynamic> json) {
     return TrafficDistribution(
-      byProtocol: (json['by_protocol'] as List<dynamic>?)
-              ?.map((e) =>
-                  ProtocolTraffic.fromJson(e as Map<String, dynamic>))
+      byProtocol:
+          (json['by_protocol'] as List<dynamic>?)
+              ?.map((e) => ProtocolTraffic.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
       byDirection: DirectionTraffic.fromJson(
-          json['by_direction'] as Map<String, dynamic>? ?? {}),
-      byPort: (json['by_port'] as List<dynamic>?)
+        json['by_direction'] as Map<String, dynamic>? ?? {},
+      ),
+      byPort:
+          (json['by_port'] as List<dynamic>?)
               ?.map((e) => PortTraffic.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
@@ -393,13 +398,13 @@ class TopTalkerSnapshot {
           : DateTime.now(),
       deviceId: (json['device_id'] as num?)?.toInt() ?? 0,
       ip: json['ip'] as String? ?? '',
-      hostname: (json['alias'] as String?) ??
+      hostname:
+          (json['alias'] as String?) ??
           (json['hostname'] as String?) ??
           json['ip'] as String? ??
           'Unknown',
       rank: (json['rank'] as num?)?.toInt() ?? 0,
-      totalConsumption:
-          (json['total_consumption'] as num?)?.toDouble() ?? 0,
+      totalConsumption: (json['total_consumption'] as num?)?.toDouble() ?? 0,
       isHog: json['is_hog'] as bool? ?? false,
     );
   }

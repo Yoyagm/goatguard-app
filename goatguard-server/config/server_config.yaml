@@ -1,0 +1,29 @@
+server:
+  tcp_port: 9999
+  udp_port: 9998
+  api_port: 8000
+  host: "0.0.0.0"
+  subnet: "192.168.1.0/24"
+  
+pcap:
+  output_dir: "pcap_output"
+  rotation_seconds: 30
+  max_file_size_mb: 100
+
+database:
+  host: "localhost"
+  port: 5432
+  name: "goatguard"
+  user: "goatguard"
+  password: "goatguard"
+
+logging:
+  level: "INFO"
+  file: "goatguard_server.log"
+
+security:
+  jwt_secret: "goatguard-dev-secret-change-in-production"
+  jwt_algorithm: "HS256"
+  jwt_expiration_hours: 24
+  fernet_key: ""  # Dejar vacío para auto-generar en dev. En prod: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+  hibp_check_enabled: true
