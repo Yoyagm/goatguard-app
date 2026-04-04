@@ -31,15 +31,22 @@ class TopTalkersHistoryChart extends StatelessWidget {
     // Top 5 devices by max consumption
     final sortedDevices = grouped.entries.toList()
       ..sort((a, b) {
-        final maxA = a.value.map((s) => s.consumptionMbps).reduce((x, y) => x > y ? x : y);
-        final maxB = b.value.map((s) => s.consumptionMbps).reduce((x, y) => x > y ? x : y);
+        final maxA = a.value
+            .map((s) => s.consumptionMbps)
+            .reduce((x, y) => x > y ? x : y);
+        final maxB = b.value
+            .map((s) => s.consumptionMbps)
+            .reduce((x, y) => x > y ? x : y);
         return maxB.compareTo(maxA);
       });
     final top5 = sortedDevices.take(5).toList();
 
     // Collect all unique timestamps sorted
-    final allTimestamps = snapshots.map((s) => s.timestamp).toSet().toList()..sort();
-    final timeIndex = {for (var i = 0; i < allTimestamps.length; i++) allTimestamps[i]: i};
+    final allTimestamps = snapshots.map((s) => s.timestamp).toSet().toList()
+      ..sort();
+    final timeIndex = {
+      for (var i = 0; i < allTimestamps.length; i++) allTimestamps[i]: i,
+    };
 
     // Build line data
     final lineBars = <LineChartBarData>[];
@@ -49,7 +56,8 @@ class TopTalkersHistoryChart extends StatelessWidget {
     for (var i = 0; i < top5.length; i++) {
       final entry = top5[i];
       final color = _colors[i % _colors.length];
-      final deviceSnapshots = entry.value..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+      final deviceSnapshots = entry.value
+        ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
       final name = deviceSnapshots.first.hostname;
 
       final spots = deviceSnapshots.map((s) {
@@ -59,16 +67,18 @@ class TopTalkersHistoryChart extends StatelessWidget {
         return FlSpot(x, y);
       }).toList();
 
-      lineBars.add(LineChartBarData(
-        spots: spots,
-        isCurved: true,
-        curveSmoothness: 0.3,
-        color: color,
-        barWidth: 2,
-        isStrokeCapRound: true,
-        dotData: const FlDotData(show: false),
-        belowBarData: BarAreaData(show: false),
-      ));
+      lineBars.add(
+        LineChartBarData(
+          spots: spots,
+          isCurved: true,
+          curveSmoothness: 0.3,
+          color: color,
+          barWidth: 2,
+          isStrokeCapRound: true,
+          dotData: const FlDotData(show: false),
+          belowBarData: BarAreaData(show: false),
+        ),
+      );
 
       legendEntries.add(_LegendEntry(name: name, color: color));
     }
@@ -103,10 +113,8 @@ class TopTalkersHistoryChart extends StatelessWidget {
                   show: true,
                   drawVerticalLine: false,
                   horizontalInterval: maxY / 4,
-                  getDrawingHorizontalLine: (value) => FlLine(
-                    color: const Color(0xFF30363D),
-                    strokeWidth: 0.5,
-                  ),
+                  getDrawingHorizontalLine: (value) =>
+                      FlLine(color: const Color(0xFF30363D), strokeWidth: 0.5),
                 ),
                 titlesData: FlTitlesData(
                   leftTitles: AxisTitles(
@@ -160,9 +168,11 @@ class TopTalkersHistoryChart extends StatelessWidget {
                     ),
                   ),
                   topTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false)),
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
                   rightTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false)),
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
                 ),
                 borderData: FlBorderData(show: false),
                 minY: 0,
