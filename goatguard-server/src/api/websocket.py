@@ -25,8 +25,12 @@ from typing import Set
 
 from fastapi import WebSocket, WebSocketDisconnect, APIRouter
 
-from src.api.auth import verify_token
+from src.api.auth import verify_token_scope
 
+# Queue for alerts from the detection engine (sync → async bridge)
+import queue
+
+alert_queue: queue.Queue = queue.Queue()
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
@@ -97,9 +101,9 @@ async def websocket_endpoint(websocket: WebSocket):
         await websocket.close(code=4001, reason="Missing token")
         return
 
-    payload = verify_token(token)
+    payload = verify_token_scope(token, "full_access")
     if payload is None:
-        await websocket.close(code=4003, reason="Invalid or expired token")
+        await websocket.close(code=4003, reason="Invalid token or TOTP not verified")
         return
 
     # Connection authenticated — accept and manage
@@ -191,7 +195,18 @@ async def broadcast_loop(get_session) -> None:
                 "devices": device_list,
                 "unseen_alerts": unseen,
             }
-
+            # Push any pending alerts from the detection engine
+            while not alert_queue.empty():
+                try:
+                    alert_data = alert_queue.get_nowait()
+                    alert_msg = {
+                        "type": "alert_created",
+                        "alert": alert_data,
+                    }
+                    await manager.broadcast(alert_msg)
+                except Exception:
+                    break
+                
             await manager.broadcast(message)
 
         except Exception as e:
