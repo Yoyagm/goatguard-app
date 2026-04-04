@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import '../../config/theme.dart';
+import '../../providers/auth_provider.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -68,8 +70,10 @@ class SettingsScreen extends StatelessWidget {
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right_rounded,
-                  color: AppColors.textTertiary),
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: AppColors.textTertiary,
+              ),
             ],
           ),
         ),
@@ -88,11 +92,7 @@ class SettingsScreen extends StatelessWidget {
           'Backend Server',
           '192.168.59.1:8080',
         ),
-        _settingsTile(
-          Icons.timer_rounded,
-          'Refresh Interval',
-          '30 seconds',
-        ),
+        _settingsTile(Icons.timer_rounded, 'Refresh Interval', '30 seconds'),
 
         const SizedBox(height: 16),
 
@@ -119,18 +119,25 @@ class SettingsScreen extends StatelessWidget {
 
         const SizedBox(height: 16),
 
+        // Security [RF-13]
+        _sectionLabel('SECURITY'),
+        _settingsTile(
+          Icons.security_rounded,
+          'Two-Factor Authentication',
+          'Active',
+        ),
+        _settingsTile(
+          Icons.vpn_key_rounded,
+          'Backup Codes',
+          'View or regenerate',
+        ),
+
+        const SizedBox(height: 16),
+
         // About
         _sectionLabel('ABOUT'),
-        _settingsTile(
-          Icons.info_outline_rounded,
-          'Version',
-          '1.0.0 (Build 1)',
-        ),
-        _settingsTile(
-          Icons.shield_rounded,
-          'Security',
-          'JWT Token Active',
-        ),
+        _settingsTile(Icons.info_outline_rounded, 'Version', '1.0.0 (Build 1)'),
+        _settingsTile(Icons.shield_rounded, 'Security', 'JWT Token Active'),
 
         const SizedBox(height: 24),
 
@@ -138,7 +145,9 @@ class SettingsScreen extends StatelessWidget {
         SizedBox(
           height: 50,
           child: OutlinedButton.icon(
-            onPressed: () {
+            onPressed: () async {
+              await context.read<AuthProvider>().logout();
+              if (!context.mounted) return;
               Navigator.of(context).pushReplacementNamed('/login');
             },
             icon: const Icon(Icons.logout_rounded, color: AppColors.critical),
@@ -152,9 +161,12 @@ class SettingsScreen extends StatelessWidget {
             ),
             style: OutlinedButton.styleFrom(
               side: BorderSide(
-                  color: AppColors.critical.withValues(alpha: 0.3), width: 1),
+                color: AppColors.critical.withValues(alpha: 0.3),
+                width: 1,
+              ),
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
           ),
         ),
@@ -213,15 +225,22 @@ class SettingsScreen extends StatelessWidget {
               ],
             ),
           ),
-          const Icon(Icons.chevron_right_rounded,
-              color: AppColors.textTertiary, size: 18),
+          const Icon(
+            Icons.chevron_right_rounded,
+            color: AppColors.textTertiary,
+            size: 18,
+          ),
         ],
       ),
     );
   }
 
   Widget _settingsToggle(
-      IconData icon, String title, String subtitle, bool value) {
+    IconData icon,
+    String title,
+    String subtitle,
+    bool value,
+  ) {
     return Container(
       margin: const EdgeInsets.only(bottom: 2),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
