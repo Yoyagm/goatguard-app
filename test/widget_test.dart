@@ -8,6 +8,7 @@ import 'package:goatguard_app/providers/auth_provider.dart';
 import 'package:goatguard_app/providers/device_provider.dart';
 import 'package:goatguard_app/providers/alert_provider.dart';
 import 'package:goatguard_app/providers/metrics_provider.dart';
+import 'package:goatguard_app/services/fcm_service.dart';
 
 void main() {
   testWidgets('App launches and shows splash', (WidgetTester tester) async {
@@ -28,7 +29,9 @@ void main() {
     await tester.pumpWidget(
       MultiProvider(
         providers: [
-          ChangeNotifierProvider(create: (_) => AuthProvider(api)),
+          ChangeNotifierProvider(
+            create: (_) => AuthProvider(api, FcmService(api)),
+          ),
           ChangeNotifierProvider(create: (_) => DeviceProvider(api)),
           ChangeNotifierProvider(create: (_) => AlertProvider(api)),
           ChangeNotifierProvider(create: (_) => MetricsProvider(api, ws)),

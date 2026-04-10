@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:goatguard_app/services/fcm_service.dart';
 import 'package:goatguard_app/providers/auth_provider.dart';
 import 'package:goatguard_app/services/api_service.dart';
 import 'package:goatguard_app/screens/auth/totp_verify_screen.dart';
@@ -81,7 +82,7 @@ void main() {
     fakeApi = _FakeApiService();
     store = {};
     _mockStorage(store);
-    provider = AuthProvider(fakeApi);
+    provider = AuthProvider(fakeApi, FcmService(fakeApi));
     // Llevar a pendingTotp
     await provider.login('admin', 'pass');
   });
