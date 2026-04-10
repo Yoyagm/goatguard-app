@@ -230,20 +230,28 @@ class ApiService {
 
   // ─── Notifications (FCM) ─────────────────────────────────
 
-  Future<void> registerFcmToken(String token,
-      {String platform = 'android'}) async {
-    await _request(() => _dio.post('/notifications/token', data: {
-          'token': token,
-          'platform': platform,
-        }));
+  Future<void> registerFcmToken(
+    String token, {
+    String platform = 'android',
+  }) async {
+    await _request(
+      () => _dio.post(
+        '/notifications/token',
+        data: {'token': token, 'platform': platform},
+      ),
+    );
   }
 
-  Future<void> unregisterFcmToken(String token,
-      {String platform = 'android'}) async {
-    await _request(() => _dio.delete('/notifications/token', data: {
-          'token': token,
-          'platform': platform,
-        }));
+  Future<void> unregisterFcmToken(
+    String token, {
+    String platform = 'android',
+  }) async {
+    await _request(
+      () => _dio.delete(
+        '/notifications/token',
+        data: {'token': token, 'platform': platform},
+      ),
+    );
   }
 
   // ─── Dashboard ─────────────────────────────────────────

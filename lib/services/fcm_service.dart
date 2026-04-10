@@ -50,8 +50,9 @@ class FcmService {
       _registerTokenWithBackend(newToken);
     });
 
-    _foregroundSub =
-        FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
+    _foregroundSub = FirebaseMessaging.onMessage.listen(
+      _handleForegroundMessage,
+    );
 
     FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
 
