@@ -2,6 +2,8 @@
 //
 // Contrato: muestra QR code, input TOTP 6 digitos, boton confirmar,
 // tras exito muestra backup codes.
+//
+// Hexagonal migration: providers now use named parameters with use cases.
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -10,8 +12,17 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:goatguard_app/providers/auth_provider.dart';
 import 'package:goatguard_app/services/api_service.dart';
-import 'package:goatguard_app/screens/auth/totp_enroll_screen.dart';
 import 'package:goatguard_app/services/fcm_service.dart';
+import 'package:goatguard_app/screens/auth/totp_enroll_screen.dart';
+import 'package:goatguard_app/infrastructure/adapters/token_storage_adapter.dart';
+import 'package:goatguard_app/infrastructure/adapters/push_notification_adapter.dart';
+import 'package:goatguard_app/infrastructure/repositories/auth_repository_impl.dart';
+import 'package:goatguard_app/core/use_cases/auth/login_use_case.dart';
+import 'package:goatguard_app/core/use_cases/auth/check_auth_use_case.dart';
+import 'package:goatguard_app/core/use_cases/auth/complete_totp_use_case.dart';
+import 'package:goatguard_app/core/use_cases/auth/complete_enrollment_use_case.dart';
+import 'package:goatguard_app/core/use_cases/auth/logout_use_case.dart';
+import 'package:goatguard_app/core/use_cases/auth/register_use_case.dart';
 
 class _FakeApiService extends ApiService {
   _FakeApiService() : super(dio: Dio(BaseOptions(baseUrl: 'http://test')));
@@ -59,6 +70,25 @@ void _mockStorage(Map<String, String?> store) {
       );
 }
 
+AuthProvider _buildAuthProvider(_FakeApiService fakeApi) {
+  final tokenStorage = TokenStorageAdapter();
+  final pushAdapter = PushNotificationAdapter(FcmService(fakeApi));
+  final authRepository = AuthRepositoryImpl(fakeApi, tokenStorage);
+
+  return AuthProvider(
+    loginUseCase: LoginUseCase(authRepository),
+    checkAuthUseCase: CheckAuthUseCase(tokenStorage),
+    completeTotpUseCase: CompleteTotpUseCase(authRepository, tokenStorage),
+    completeEnrollmentUseCase:
+        CompleteEnrollmentUseCase(authRepository, tokenStorage),
+    logoutUseCase: LogoutUseCase(tokenStorage, pushAdapter),
+    registerUseCase: RegisterUseCase(authRepository),
+    authRepository: authRepository,
+    pushNotificationPort: pushAdapter,
+    tokenStorage: tokenStorage,
+  );
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -70,7 +100,7 @@ void main() {
     fakeApi = _FakeApiService();
     store = {};
     _mockStorage(store);
-    provider = AuthProvider(fakeApi, FcmService(fakeApi));
+    provider = _buildAuthProvider(fakeApi);
     await provider.login('admin', 'pass');
   });
 
@@ -93,6 +123,7 @@ void main() {
 
   testWidgets('enrollment exitoso muestra backup codes', (tester) async {
     fakeApi.totpEnrollVerifyResponse = {
+      'access_token': 'jwt-full-access',
       'backup_codes': ['AAAA-BBBB-CCCC', 'DDDD-EEEE-FFFF'],
     };
 

@@ -1,124 +1,30 @@
+/// Compatibility layer — re-exports domain entities as the legacy type names.
+/// Screens continue importing `models/device.dart` until Phase 9 migrates
+/// them to import from `core/entities/` directly.
+library;
+
 import 'package:flutter/material.dart';
-import '../config/helpers.dart';
+export '../core/entities/device.dart';
+export '../core/entities/device_snapshot.dart';
+export '../core/entities/device_connection.dart';
 
-enum DeviceType {
-  desktop,
-  laptop,
-  server,
-  phone,
-  printer,
-  camera,
-  iot,
-  unknown,
-}
+import '../core/entities/device.dart';
+import '../core/entities/device_snapshot.dart';
+import '../core/entities/device_connection.dart';
 
-enum DeviceCoverage { withAgent, arpOnly }
+/// Type alias so existing screen code referencing `Device` compiles.
+typedef Device = DeviceEntity;
 
-enum DeviceStatus { online, offline }
+/// Type alias for DeviceSnapshot.
+typedef DeviceSnapshot = DeviceSnapshotEntity;
 
-class Device {
-  final String id;
-  final String name;
-  final String ipAddress;
-  final String macAddress;
-  final DeviceType type;
-  final DeviceCoverage coverage;
-  final DeviceStatus status;
-  final String? os;
-  final double? cpuUsage;
-  final double? ramUsage;
-  final double? speedMbps;
-  final double? latencyMs;
-  final double? retransmissionsPerMin;
-  final int? failedConnections;
-  final int alertCount;
-  final DateTime lastSeen;
+/// Type alias for DeviceConnection.
+typedef DeviceConnection = DeviceConnectionEntity;
 
-  const Device({
-    required this.id,
-    required this.name,
-    required this.ipAddress,
-    required this.macAddress,
-    required this.type,
-    required this.coverage,
-    required this.status,
-    this.os,
-    this.cpuUsage,
-    this.ramUsage,
-    this.speedMbps,
-    this.latencyMs,
-    this.retransmissionsPerMin,
-    this.failedConnections,
-    this.alertCount = 0,
-    required this.lastSeen,
-  });
-
-  /// Factoría desde JSON de la API (GET /devices, GET /devices/{id})
-  factory Device.fromJson(Map<String, dynamic> json) {
-    return Device(
-      id: json['id'].toString(),
-      name:
-          (json['alias'] as String?) ??
-          (json['hostname'] as String?) ??
-          'Unknown',
-      ipAddress: json['ip'] as String,
-      macAddress: json['mac'] as String,
-      type: _parseDeviceType(json['device_type'] as String?),
-      coverage: (json['has_agent'] as bool? ?? false)
-          ? DeviceCoverage.withAgent
-          : DeviceCoverage.arpOnly,
-      status: (json['status'] as String?) == 'active'
-          ? DeviceStatus.online
-          : DeviceStatus.offline,
-      os: null, // El server no recolecta OS
-      cpuUsage: _toDouble(json['metrics']?['cpu_pct']),
-      ramUsage: _toDouble(json['metrics']?['ram_pct']),
-      speedMbps: _toDouble(json['metrics']?['link_speed']),
-      latencyMs: _toDouble(json['metrics']?['dns_response_time']),
-      retransmissionsPerMin: _toDouble(json['metrics']?['tcp_retransmissions']),
-      failedConnections: json['metrics']?['failed_connections'] as int?,
-      alertCount: json['alert_count'] as int? ?? 0,
-      lastSeen: json['last_seen'] != null
-          ? parseApiTimestamp(json['last_seen'] as String)
-          : DateTime.now(),
-    );
-  }
-
-  /// Factoría rápida desde payload del WebSocket (campos reducidos)
-  factory Device.fromWsJson(Map<String, dynamic> json) {
-    return Device(
-      id: json['id'].toString(),
-      name: (json['hostname'] as String?) ?? 'Unknown',
-      ipAddress: json['ip'] as String,
-      macAddress: '',
-      type: DeviceType.unknown,
-      coverage: (json['has_agent'] as bool? ?? false)
-          ? DeviceCoverage.withAgent
-          : DeviceCoverage.arpOnly,
-      status: (json['status'] as String?) == 'active'
-          ? DeviceStatus.online
-          : DeviceStatus.offline,
-      cpuUsage: _toDouble(json['cpu_pct']),
-      ramUsage: _toDouble(json['ram_pct']),
-      speedMbps: null,
-      lastSeen: DateTime.now(),
-    );
-  }
-
-  static DeviceType _parseDeviceType(String? raw) {
-    if (raw == null) return DeviceType.unknown;
-    return DeviceType.values.firstWhere(
-      (e) => e.name == raw,
-      orElse: () => DeviceType.unknown,
-    );
-  }
-
-  static double? _toDouble(dynamic val) {
-    if (val == null) return null;
-    if (val is num) return val.toDouble();
-    return double.tryParse(val.toString());
-  }
-
+/// Presentation-layer extension: maps [DeviceType] to a Material icon.
+/// This logic lived in the old `Device` model; it stays accessible here
+/// until Phase 9 moves it to a proper presentation helper.
+extension DeviceEntityIcon on DeviceEntity {
   IconData get icon {
     switch (type) {
       case DeviceType.desktop:
@@ -138,92 +44,5 @@ class Device {
       case DeviceType.unknown:
         return Icons.device_unknown_rounded;
     }
-  }
-}
-
-// ─── Device History Snapshot ────────────────────────────
-
-class DeviceSnapshot {
-  final DateTime timestamp;
-  final double cpuPct;
-  final double ramPct;
-  final double bandwidthIn;
-  final double bandwidthOut;
-  final double tcpRetransmissions;
-  final int failedConnections;
-
-  const DeviceSnapshot({
-    required this.timestamp,
-    required this.cpuPct,
-    required this.ramPct,
-    required this.bandwidthIn,
-    required this.bandwidthOut,
-    required this.tcpRetransmissions,
-    required this.failedConnections,
-  });
-
-  factory DeviceSnapshot.fromJson(Map<String, dynamic> json) {
-    return DeviceSnapshot(
-      timestamp: json['timestamp'] != null
-          ? DateTime.parse(json['timestamp'] as String)
-          : DateTime.now(),
-      cpuPct: _d(json['cpu_pct']),
-      ramPct: _d(json['ram_pct']),
-      bandwidthIn: _d(json['bandwidth_in']),
-      bandwidthOut: _d(json['bandwidth_out']),
-      tcpRetransmissions: _d(json['tcp_retransmissions']),
-      failedConnections: (json['failed_connections'] as num?)?.toInt() ?? 0,
-    );
-  }
-
-  static double _d(dynamic val) {
-    if (val == null) return 0;
-    if (val is num) return val.toDouble();
-    return double.tryParse(val.toString()) ?? 0;
-  }
-}
-
-// ─── Device Connection ──────────────────────────────────
-
-class DeviceConnection {
-  final String dstIp;
-  final String? dstHostname;
-  final int dstPort;
-  final String proto;
-  final int totalBytes;
-  final int connectionCount;
-  final DateTime lastSeen;
-
-  const DeviceConnection({
-    required this.dstIp,
-    this.dstHostname,
-    required this.dstPort,
-    required this.proto,
-    required this.totalBytes,
-    required this.connectionCount,
-    required this.lastSeen,
-  });
-
-  factory DeviceConnection.fromJson(Map<String, dynamic> json) {
-    return DeviceConnection(
-      dstIp: json['dst_ip'] as String? ?? '',
-      dstHostname: json['dst_hostname'] as String?,
-      dstPort: (json['dst_port'] as num?)?.toInt() ?? 0,
-      proto: json['proto'] as String? ?? 'tcp',
-      totalBytes: (json['total_bytes'] as num?)?.toInt() ?? 0,
-      connectionCount: (json['connection_count'] as num?)?.toInt() ?? 0,
-      lastSeen: json['last_seen'] != null
-          ? DateTime.parse(json['last_seen'] as String)
-          : DateTime.now(),
-    );
-  }
-
-  String get displayName => dstHostname ?? dstIp;
-
-  String get bytesFormatted {
-    if (totalBytes < 1024) return '$totalBytes B';
-    if (totalBytes < 1048576)
-      return '${(totalBytes / 1024).toStringAsFixed(1)} KB';
-    return '${(totalBytes / 1048576).toStringAsFixed(1)} MB';
   }
 }
