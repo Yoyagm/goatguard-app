@@ -134,8 +134,10 @@ class _TotpVerifyScreenState extends State<TotpVerifyScreen> {
                         height: 20,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : Text('Verificar',
-                        style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+                    : Text(
+                        'Verificar',
+                        style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                      ),
               ),
             ],
           ),

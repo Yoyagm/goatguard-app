@@ -187,16 +187,17 @@ class _TotpEnrollScreenState extends State<TotpEnrollScreen> {
               ),
               const SizedBox(height: 24),
               ElevatedButton(
-                onPressed:
-                    _isCodeValid && !_isLoading ? _handleConfirm : null,
+                onPressed: _isCodeValid && !_isLoading ? _handleConfirm : null,
                 child: _isLoading
                     ? const SizedBox(
                         width: 20,
                         height: 20,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : Text('Confirmar',
-                        style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+                    : Text(
+                        'Confirmar',
+                        style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                      ),
               ),
               const SizedBox(height: 40),
             ],
@@ -207,8 +208,7 @@ class _TotpEnrollScreenState extends State<TotpEnrollScreen> {
   }
 
   Widget _buildBackupCodesView() {
-    final codes =
-        context.read<AuthProvider>().backupCodes ?? [];
+    final codes = context.read<AuthProvider>().backupCodes ?? [];
     return Scaffold(
       backgroundColor: AppColors.base,
       body: SafeArea(
@@ -218,7 +218,11 @@ class _TotpEnrollScreenState extends State<TotpEnrollScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const SizedBox(height: 40),
-              const Icon(Icons.check_circle, color: AppColors.healthy, size: 64),
+              const Icon(
+                Icons.check_circle,
+                color: AppColors.healthy,
+                size: 64,
+              ),
               const SizedBox(height: 16),
               Text(
                 'TOTP configurado',
@@ -269,9 +273,7 @@ class _TotpEnrollScreenState extends State<TotpEnrollScreen> {
               const SizedBox(height: 16),
               OutlinedButton.icon(
                 onPressed: () {
-                  Clipboard.setData(
-                    ClipboardData(text: codes.join('\n')),
-                  );
+                  Clipboard.setData(ClipboardData(text: codes.join('\n')));
                   Future.delayed(const Duration(seconds: 30), () {
                     Clipboard.setData(const ClipboardData(text: ''));
                   });
@@ -289,8 +291,10 @@ class _TotpEnrollScreenState extends State<TotpEnrollScreen> {
               const SizedBox(height: 24),
               ElevatedButton(
                 onPressed: _handleContinue,
-                child: Text('Continuar',
-                    style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+                child: Text(
+                  'Continuar',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                ),
               ),
               const SizedBox(height: 40),
             ],

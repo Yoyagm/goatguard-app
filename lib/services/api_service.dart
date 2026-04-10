@@ -99,16 +99,11 @@ class ApiService {
     String password, {
     String? invitationToken,
   }) async {
-    final data = <String, dynamic>{
-      'username': username,
-      'password': password,
-    };
+    final data = <String, dynamic>{'username': username, 'password': password};
     if (invitationToken != null) {
       data['invitation_token'] = invitationToken;
     }
-    return _request(
-      () => _dio.post('/auth/register', data: data),
-    );
+    return _request(() => _dio.post('/auth/register', data: data));
   }
 
   /// Verifica si el sistema necesita bootstrap (0 usuarios en BD).
@@ -127,9 +122,7 @@ class ApiService {
   /// Paso 2 del login: verifica codigo TOTP de 6 digitos.
   /// Requiere JWT con scope=pending_totp en storage.
   Future<Map<String, dynamic>> totpVerify(String code) async {
-    return _request(
-      () => _dio.post('/auth/totp/verify', data: {'code': code}),
-    );
+    return _request(() => _dio.post('/auth/totp/verify', data: {'code': code}));
   }
 
   /// Primer TOTP tras registro: confirma enrollment y retorna backup codes.
@@ -175,9 +168,7 @@ class ApiService {
       () => _dio.post(
         '/auth/recovery/reset-password',
         data: {'new_password': newPassword},
-        options: Options(
-          headers: {'Authorization': 'Bearer $resetToken'},
-        ),
+        options: Options(headers: {'Authorization': 'Bearer $resetToken'}),
       ),
     );
   }

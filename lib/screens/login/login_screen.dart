@@ -205,8 +205,7 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 24),
               Center(
                 child: TextButton(
-                  onPressed: () =>
-                      Navigator.of(context).pushNamed('/register'),
+                  onPressed: () => Navigator.of(context).pushNamed('/register'),
                   child: Text(
                     'Crear cuenta',
                     style: GoogleFonts.inter(color: AppColors.brand),

@@ -41,23 +41,23 @@ class _FakeApiService extends ApiService {
 void _mockStorage(Map<String, String?> store) {
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .setMockMethodCallHandler(
-    const MethodChannel('plugins.it_nomads.com/flutter_secure_storage'),
-    (MethodCall call) async {
-      switch (call.method) {
-        case 'read':
-          return store[(call.arguments as Map)['key'] as String];
-        case 'write':
-          final args = call.arguments as Map;
-          store[args['key'] as String] = args['value'] as String?;
-          return null;
-        case 'delete':
-          store.remove((call.arguments as Map)['key'] as String);
-          return null;
-        default:
-          return null;
-      }
-    },
-  );
+        const MethodChannel('plugins.it_nomads.com/flutter_secure_storage'),
+        (MethodCall call) async {
+          switch (call.method) {
+            case 'read':
+              return store[(call.arguments as Map)['key'] as String];
+            case 'write':
+              final args = call.arguments as Map;
+              store[args['key'] as String] = args['value'] as String?;
+              return null;
+            case 'delete':
+              store.remove((call.arguments as Map)['key'] as String);
+              return null;
+            default:
+              return null;
+          }
+        },
+      );
 }
 
 void main() {
@@ -86,16 +86,18 @@ void main() {
     );
   }
 
-  testWidgets('muestra 3 campos: username, password, invitation token',
-      (tester) async {
+  testWidgets('muestra 3 campos: username, password, invitation token', (
+    tester,
+  ) async {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
     expect(find.byType(TextField), findsAtLeastNWidgets(3));
   });
 
-  testWidgets('boton registrar deshabilitado con campos vacios',
-      (tester) async {
+  testWidgets('boton registrar deshabilitado con campos vacios', (
+    tester,
+  ) async {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
@@ -112,10 +114,15 @@ void main() {
 
     // Solo 2 campos: username y password (sin invitation)
     expect(find.byType(TextField), findsNWidgets(2));
-    expect(find.text('Crea la cuenta de administrador inicial'), findsOneWidget);
+    expect(
+      find.text('Crea la cuenta de administrador inicial'),
+      findsOneWidget,
+    );
   });
 
-  testWidgets('modo bootstrap permite registrar sin invitation', (tester) async {
+  testWidgets('modo bootstrap permite registrar sin invitation', (
+    tester,
+  ) async {
     fakeApi.needsBootstrap = true;
     fakeApi.registerResponse = {
       'access_token': 'jwt-pending-totp',
@@ -125,18 +132,18 @@ void main() {
       'qr_png_base64': 'iVBORw0KGgo=',
     };
 
-    await tester.pumpWidget(MaterialApp(
-      routes: {
-        '/totp-enroll': (_) => const Scaffold(body: Text('ENROLL')),
-      },
-      home: MultiProvider(
-        providers: [
-          ChangeNotifierProvider.value(value: provider),
-          Provider<ApiService>.value(value: fakeApi),
-        ],
-        child: const RegisterScreen(),
+    await tester.pumpWidget(
+      MaterialApp(
+        routes: {'/totp-enroll': (_) => const Scaffold(body: Text('ENROLL'))},
+        home: MultiProvider(
+          providers: [
+            ChangeNotifierProvider.value(value: provider),
+            Provider<ApiService>.value(value: fakeApi),
+          ],
+          child: const RegisterScreen(),
+        ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
 
     final fields = find.byType(TextField);
@@ -160,18 +167,18 @@ void main() {
       'qr_png_base64': 'iVBORw0KGgo=',
     };
 
-    await tester.pumpWidget(MaterialApp(
-      routes: {
-        '/totp-enroll': (_) => const Scaffold(body: Text('ENROLL')),
-      },
-      home: MultiProvider(
-        providers: [
-          ChangeNotifierProvider.value(value: provider),
-          Provider<ApiService>.value(value: fakeApi),
-        ],
-        child: const RegisterScreen(),
+    await tester.pumpWidget(
+      MaterialApp(
+        routes: {'/totp-enroll': (_) => const Scaffold(body: Text('ENROLL'))},
+        home: MultiProvider(
+          providers: [
+            ChangeNotifierProvider.value(value: provider),
+            Provider<ApiService>.value(value: fakeApi),
+          ],
+          child: const RegisterScreen(),
+        ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
 
     final fields = find.byType(TextField);

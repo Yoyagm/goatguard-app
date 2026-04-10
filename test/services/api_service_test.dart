@@ -34,30 +34,32 @@ class _MockInterceptor extends Interceptor {
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
     captured.add(options);
     if (_networkError) {
-      handler.reject(DioException(
-        requestOptions: options,
-        type: DioExceptionType.connectionError,
-        message: 'Connection refused',
-      ));
+      handler.reject(
+        DioException(
+          requestOptions: options,
+          type: DioExceptionType.connectionError,
+          message: 'Connection refused',
+        ),
+      );
       return;
     }
     if (_shouldReject) {
-      handler.reject(DioException(
-        requestOptions: options,
-        response: Response(
+      handler.reject(
+        DioException(
           requestOptions: options,
-          statusCode: _statusCode,
-          data: {'detail': 'Error simulado'},
+          response: Response(
+            requestOptions: options,
+            statusCode: _statusCode,
+            data: {'detail': 'Error simulado'},
+          ),
+          type: DioExceptionType.badResponse,
         ),
-        type: DioExceptionType.badResponse,
-      ));
+      );
       return;
     }
-    handler.resolve(Response(
-      requestOptions: options,
-      statusCode: _statusCode,
-      data: _data,
-    ));
+    handler.resolve(
+      Response(requestOptions: options, statusCode: _statusCode, data: _data),
+    );
   }
 
   /// Ultimo request capturado.
@@ -115,11 +117,7 @@ void main() {
       expect(
         () => api.register('admin', 'pass', invitationToken: 'bad-token'),
         throwsA(
-          isA<ApiException>().having(
-            (e) => e.statusCode,
-            'statusCode',
-            400,
-          ),
+          isA<ApiException>().having((e) => e.statusCode, 'statusCode', 400),
         ),
       );
     });
@@ -152,11 +150,7 @@ void main() {
       expect(
         () => api.totpVerify('000000'),
         throwsA(
-          isA<ApiException>().having(
-            (e) => e.statusCode,
-            'statusCode',
-            401,
-          ),
+          isA<ApiException>().having((e) => e.statusCode, 'statusCode', 401),
         ),
       );
     });
@@ -167,11 +161,7 @@ void main() {
       expect(
         () => api.totpVerify('123456'),
         throwsA(
-          isA<ApiException>().having(
-            (e) => e.statusCode,
-            'statusCode',
-            429,
-          ),
+          isA<ApiException>().having((e) => e.statusCode, 'statusCode', 429),
         ),
       );
     });
@@ -182,11 +172,7 @@ void main() {
   group('totpEnrollVerify', () {
     test('envia primer codigo y retorna backup codes', () async {
       mock.respond(200, {
-        'backup_codes': [
-          'AAAA-BBBB-CCCC',
-          'DDDD-EEEE-FFFF',
-          'GGGG-HHHH-IIII',
-        ],
+        'backup_codes': ['AAAA-BBBB-CCCC', 'DDDD-EEEE-FFFF', 'GGGG-HHHH-IIII'],
       });
 
       final result = await api.totpEnrollVerify('654321');
@@ -236,11 +222,7 @@ void main() {
       expect(
         () => api.totpVerifyBackup('USED-CODE-HERE'),
         throwsA(
-          isA<ApiException>().having(
-            (e) => e.statusCode,
-            'statusCode',
-            401,
-          ),
+          isA<ApiException>().having((e) => e.statusCode, 'statusCode', 401),
         ),
       );
     });
@@ -267,16 +249,14 @@ void main() {
     });
 
     test('lanza ApiException en 429 (intentos excedidos)', () async {
-      mock.rejectWith(429, {'detail': 'Codigo bloqueado por exceso de intentos'});
+      mock.rejectWith(429, {
+        'detail': 'Codigo bloqueado por exceso de intentos',
+      });
 
       expect(
         () => api.recoveryVerifyCode('admin', 'XXXX-XXXX-XXXX-XXXX'),
         throwsA(
-          isA<ApiException>().having(
-            (e) => e.statusCode,
-            'statusCode',
-            429,
-          ),
+          isA<ApiException>().having((e) => e.statusCode, 'statusCode', 429),
         ),
       );
     });
@@ -304,26 +284,16 @@ void main() {
       expect(req.path, '/auth/recovery/reset-password');
       expect(req.data['new_password'], 'NewStrongPass456!@#');
       // El reset_token va como Bearer, NO el token almacenado
-      expect(
-        req.headers['Authorization'],
-        'Bearer jwt-password-reset',
-      );
+      expect(req.headers['Authorization'], 'Bearer jwt-password-reset');
     });
 
     test('lanza ApiException en 401 (reset token expirado)', () async {
       mock.rejectWith(401, {'detail': 'Token de reset invalido'});
 
       expect(
-        () => api.recoveryResetPassword(
-          'NewPass',
-          resetToken: 'expired-token',
-        ),
+        () => api.recoveryResetPassword('NewPass', resetToken: 'expired-token'),
         throwsA(
-          isA<ApiException>().having(
-            (e) => e.statusCode,
-            'statusCode',
-            401,
-          ),
+          isA<ApiException>().having((e) => e.statusCode, 'statusCode', 401),
         ),
       );
     });
@@ -338,11 +308,7 @@ void main() {
       expect(
         () => api.totpVerify('123456'),
         throwsA(
-          isA<ApiException>().having(
-            (e) => e.statusCode,
-            'statusCode',
-            isNull,
-          ),
+          isA<ApiException>().having((e) => e.statusCode, 'statusCode', isNull),
         ),
       );
     });

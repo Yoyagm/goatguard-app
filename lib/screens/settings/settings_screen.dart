@@ -310,7 +310,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           backgroundColor: AppColors.critical,
-          content: Text(e.message, style: GoogleFonts.inter(color: Colors.white)),
+          content: Text(
+            e.message,
+            style: GoogleFonts.inter(color: Colors.white),
+          ),
         ),
       );
     }
@@ -371,21 +374,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onPressed: () {
               Clipboard.setData(ClipboardData(text: token));
               Future.delayed(const Duration(seconds: 30), () async {
-                final current =
-                    await Clipboard.getData(Clipboard.kTextPlain);
+                final current = await Clipboard.getData(Clipboard.kTextPlain);
                 if (current?.text == token) {
                   Clipboard.setData(const ClipboardData(text: ''));
                 }
               });
-              ScaffoldMessenger.of(ctx).showSnackBar(
-                const SnackBar(content: Text('Token copiado')),
-              );
+              ScaffoldMessenger.of(
+                ctx,
+              ).showSnackBar(const SnackBar(content: Text('Token copiado')));
             },
-            child: Text('Copy', style: GoogleFonts.inter(color: AppColors.brand)),
+            child: Text(
+              'Copy',
+              style: GoogleFonts.inter(color: AppColors.brand),
+            ),
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('Close', style: GoogleFonts.inter(color: AppColors.textSecondary)),
+            child: Text(
+              'Close',
+              style: GoogleFonts.inter(color: AppColors.textSecondary),
+            ),
           ),
         ],
       ),
