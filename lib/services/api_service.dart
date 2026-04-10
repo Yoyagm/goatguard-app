@@ -228,6 +228,32 @@ class ApiService {
     return _request(() => _dio.get('/agents/', queryParameters: params));
   }
 
+  // ─── Notifications (FCM) ─────────────────────────────────
+
+  Future<void> registerFcmToken(
+    String token, {
+    String platform = 'android',
+  }) async {
+    await _request(
+      () => _dio.post(
+        '/notifications/token',
+        data: {'token': token, 'platform': platform},
+      ),
+    );
+  }
+
+  Future<void> unregisterFcmToken(
+    String token, {
+    String platform = 'android',
+  }) async {
+    await _request(
+      () => _dio.delete(
+        '/notifications/token',
+        data: {'token': token, 'platform': platform},
+      ),
+    );
+  }
+
   // ─── Dashboard ─────────────────────────────────────────
 
   Future<Map<String, dynamic>> getDashboardSummary() async {

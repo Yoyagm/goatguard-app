@@ -19,6 +19,7 @@ dependencies:
   percent_indicator: ^4.2.5
   dio: ^5.9.2
   web_socket_channel: ^3.0.3
+  firebase_core: ^4.5.0
   firebase_messaging: ^16.1.2
   qr_flutter: ^4.1.0
 

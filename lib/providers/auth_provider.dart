@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../services/api_service.dart';
+import '../services/fcm_service.dart';
 
 /// Estado de autenticación con soporte 2FA TOTP [RF-13, RF-16]
 enum AuthState {
@@ -15,6 +16,7 @@ enum AuthState {
 
 class AuthProvider extends ChangeNotifier {
   final ApiService _api;
+  final FcmService _fcm;
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
 
   AuthState _state = AuthState.unknown;
@@ -22,7 +24,7 @@ class AuthProvider extends ChangeNotifier {
   String? _error;
   List<String>? _backupCodes;
 
-  AuthProvider(this._api) {
+  AuthProvider(this._api, this._fcm) {
     _api.onUnauthorized = () {
       _state = AuthState.unauthenticated;
       _backupCodes = null;
@@ -36,6 +38,7 @@ class AuthProvider extends ChangeNotifier {
   String? get error => _error;
   bool get isAuthenticated => _state == AuthState.authenticated;
   List<String>? get backupCodes => _backupCodes;
+  FcmService get fcmService => _fcm;
 
   /// Limpia backup codes de memoria tras confirmar que el usuario los guardó.
   void clearBackupCodes() {
@@ -104,6 +107,7 @@ class AuthProvider extends ChangeNotifier {
     switch (scope) {
       case 'full_access':
         _state = AuthState.authenticated;
+        await _initializeFcm();
       case 'pending_totp':
         _state = AuthState.pendingTotp;
       default:
@@ -194,12 +198,24 @@ class AuthProvider extends ChangeNotifier {
   // ── Logout ──────────────────────────────────────────────────────────────
 
   Future<void> logout() async {
+    await _fcm.unregisterToken();
     await _storage.delete(key: 'jwt_token');
     await _storage.delete(key: 'username');
     _username = null;
     _backupCodes = null;
     _state = AuthState.unauthenticated;
     notifyListeners();
+  }
+
+  // ── FCM ─────────────────────────────────────────────────────────────────
+
+  Future<void> _initializeFcm() async {
+    try {
+      await _fcm.initialize();
+      await _fcm.registerToken();
+    } catch (e) {
+      debugPrint('FCM initialization failed: $e');
+    }
   }
 
   /// Token actual para WebSocket
