@@ -20,9 +20,9 @@ class AlertProvider extends ChangeNotifier {
     required GetAlertsUseCase getAlertsUseCase,
     required GetUnseenCountUseCase getUnseenCountUseCase,
     required MarkAlertSeenUseCase markAlertSeenUseCase,
-  })  : _getAlertsUseCase = getAlertsUseCase,
-        _getUnseenCountUseCase = getUnseenCountUseCase,
-        _markAlertSeenUseCase = markAlertSeenUseCase;
+  }) : _getAlertsUseCase = getAlertsUseCase,
+       _getUnseenCountUseCase = getUnseenCountUseCase,
+       _markAlertSeenUseCase = markAlertSeenUseCase;
 
   List<NetworkAlertEntity> get alerts => _alerts;
   int get unseenCount => _unseenCount;

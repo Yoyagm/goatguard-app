@@ -9,15 +9,9 @@ enum DeviceType {
   unknown,
 }
 
-enum DeviceCoverage {
-  withAgent,
-  arpOnly,
-}
+enum DeviceCoverage { withAgent, arpOnly }
 
-enum DeviceStatus {
-  online,
-  offline,
-}
+enum DeviceStatus { online, offline }
 
 class DeviceEntity {
   final String id;

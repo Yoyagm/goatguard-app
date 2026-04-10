@@ -38,8 +38,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   Future<void> _checkBootstrap() async {
-    final result =
-        await context.read<AuthProvider>().checkBootstrapStatus();
+    final result = await context.read<AuthProvider>().checkBootstrapStatus();
     if (!mounted) return;
     switch (result) {
       case Success(:final data):

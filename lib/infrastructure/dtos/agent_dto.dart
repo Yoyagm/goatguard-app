@@ -25,13 +25,13 @@ class AgentDto {
 
   /// From GET /agents/ (flat agent object).
   factory AgentDto.fromJson(Map<String, dynamic> json) => AgentDto(
-        uid: json['uid'],
-        id: json['id'],
-        hostname: json['hostname'] as String?,
-        ip: json['ip'] as String?,
-        status: json['status'] as String?,
-        lastHeartbeat: json['last_heartbeat'] as String?,
-      );
+    uid: json['uid'],
+    id: json['id'],
+    hostname: json['hostname'] as String?,
+    ip: json['ip'] as String?,
+    status: json['status'] as String?,
+    lastHeartbeat: json['last_heartbeat'] as String?,
+  );
 
   /// From GET /devices/{id} (nested agent + metrics).
   factory AgentDto.fromDeviceJson(Map<String, dynamic> deviceJson) {

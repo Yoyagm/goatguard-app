@@ -1,8 +1,4 @@
-enum AlertSeverity {
-  critical,
-  warning,
-  info,
-}
+enum AlertSeverity { critical, warning, info }
 
 class NetworkAlertEntity {
   final String id;
@@ -53,9 +49,11 @@ class NetworkAlertEntity {
   static String formatTitle(String anomalyType) {
     return anomalyType
         .split('_')
-        .map((word) => word.isEmpty
-            ? word
-            : '${word[0].toUpperCase()}${word.substring(1).toLowerCase()}')
+        .map(
+          (word) => word.isEmpty
+              ? word
+              : '${word[0].toUpperCase()}${word.substring(1).toLowerCase()}',
+        )
         .join(' ');
   }
 }

@@ -20,15 +20,15 @@ class AlertDto {
   });
 
   factory AlertDto.fromJson(Map<String, dynamic> json) => AlertDto(
-        id: json['id'],
-        anomalyType: json['anomaly_type'] as String? ?? 'unknown',
-        description: json['description'] as String?,
-        severity: json['severity'] as String?,
-        deviceHostname: json['device_hostname'] as String?,
-        deviceIp: json['device_ip'] as String?,
-        timestamp: json['timestamp'] as String?,
-        seen: json['seen'] as bool?,
-      );
+    id: json['id'],
+    anomalyType: json['anomaly_type'] as String? ?? 'unknown',
+    description: json['description'] as String?,
+    severity: json['severity'] as String?,
+    deviceHostname: json['device_hostname'] as String?,
+    deviceIp: json['device_ip'] as String?,
+    timestamp: json['timestamp'] as String?,
+    seen: json['seen'] as bool?,
+  );
 
   /// Converts anomaly_type snake_case to Title Case.
   /// Example: `high_cpu_usage` -> `High Cpu Usage`

@@ -45,15 +45,15 @@ class AuthProvider extends ChangeNotifier {
     required AuthRepository authRepository,
     required PushNotificationPort pushNotificationPort,
     required TokenStoragePort tokenStorage,
-  })  : _loginUseCase = loginUseCase,
-        _checkAuthUseCase = checkAuthUseCase,
-        _completeTotpUseCase = completeTotpUseCase,
-        _completeEnrollmentUseCase = completeEnrollmentUseCase,
-        _logoutUseCase = logoutUseCase,
-        _registerUseCase = registerUseCase,
-        _authRepository = authRepository,
-        _pushNotificationPort = pushNotificationPort,
-        _tokenStorage = tokenStorage {
+  }) : _loginUseCase = loginUseCase,
+       _checkAuthUseCase = checkAuthUseCase,
+       _completeTotpUseCase = completeTotpUseCase,
+       _completeEnrollmentUseCase = completeEnrollmentUseCase,
+       _logoutUseCase = logoutUseCase,
+       _registerUseCase = registerUseCase,
+       _authRepository = authRepository,
+       _pushNotificationPort = pushNotificationPort,
+       _tokenStorage = tokenStorage {
     _authRepository.onUnauthorized = () {
       _state = AuthState.unauthenticated;
       _backupCodes = null;

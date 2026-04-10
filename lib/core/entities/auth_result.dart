@@ -14,8 +14,5 @@ class TotpResult {
   final String token;
   final List<String>? backupCodes;
 
-  const TotpResult({
-    required this.token,
-    this.backupCodes,
-  });
+  const TotpResult({required this.token, this.backupCodes});
 }

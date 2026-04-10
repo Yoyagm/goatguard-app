@@ -35,14 +35,14 @@ class IspHealthDto {
   });
 
   factory IspHealthDto.fromJson(Map<String, dynamic> json) => IspHealthDto(
-        latency: IspMetricDetailDto.fromJson(
-          json['latency'] as Map<String, dynamic>? ?? {},
-        ),
-        packetLoss: IspMetricDetailDto.fromJson(
-          json['packet_loss'] as Map<String, dynamic>? ?? {},
-        ),
-        jitter: IspMetricDetailDto.fromJson(
-          json['jitter'] as Map<String, dynamic>? ?? {},
-        ),
-      );
+    latency: IspMetricDetailDto.fromJson(
+      json['latency'] as Map<String, dynamic>? ?? {},
+    ),
+    packetLoss: IspMetricDetailDto.fromJson(
+      json['packet_loss'] as Map<String, dynamic>? ?? {},
+    ),
+    jitter: IspMetricDetailDto.fromJson(
+      json['jitter'] as Map<String, dynamic>? ?? {},
+    ),
+  );
 }

@@ -44,11 +44,11 @@ class PortTrafficDto {
   const PortTrafficDto({this.port, this.service, this.bytes, this.percentage});
 
   factory PortTrafficDto.fromJson(Map<String, dynamic> json) => PortTrafficDto(
-        port: json['port'],
-        service: json['service'] as String?,
-        bytes: json['bytes'],
-        percentage: json['percentage'],
-      );
+    port: json['port'],
+    service: json['service'] as String?,
+    bytes: json['bytes'],
+    percentage: json['percentage'],
+  );
 }
 
 class TrafficDistributionDto {
@@ -64,17 +64,19 @@ class TrafficDistributionDto {
 
   factory TrafficDistributionDto.fromJson(Map<String, dynamic> json) =>
       TrafficDistributionDto(
-        byProtocol: (json['by_protocol'] as List<dynamic>?)
-                ?.map((e) =>
-                    ProtocolTrafficDto.fromJson(e as Map<String, dynamic>))
+        byProtocol:
+            (json['by_protocol'] as List<dynamic>?)
+                ?.map(
+                  (e) => ProtocolTrafficDto.fromJson(e as Map<String, dynamic>),
+                )
                 .toList() ??
             [],
         byDirection: DirectionTrafficDto.fromJson(
           json['by_direction'] as Map<String, dynamic>? ?? {},
         ),
-        byPort: (json['by_port'] as List<dynamic>?)
-                ?.map(
-                    (e) => PortTrafficDto.fromJson(e as Map<String, dynamic>))
+        byPort:
+            (json['by_port'] as List<dynamic>?)
+                ?.map((e) => PortTrafficDto.fromJson(e as Map<String, dynamic>))
                 .toList() ??
             [],
       );

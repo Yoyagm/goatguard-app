@@ -79,8 +79,10 @@ AuthProvider _buildAuthProvider(_FakeApiService fakeApi) {
     loginUseCase: LoginUseCase(authRepository),
     checkAuthUseCase: CheckAuthUseCase(tokenStorage),
     completeTotpUseCase: CompleteTotpUseCase(authRepository, tokenStorage),
-    completeEnrollmentUseCase:
-        CompleteEnrollmentUseCase(authRepository, tokenStorage),
+    completeEnrollmentUseCase: CompleteEnrollmentUseCase(
+      authRepository,
+      tokenStorage,
+    ),
     logoutUseCase: LogoutUseCase(tokenStorage, pushAdapter),
     registerUseCase: RegisterUseCase(authRepository),
     authRepository: authRepository,
