@@ -1,12 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import '../../config/theme.dart';
+import '../../providers/auth_provider.dart';
+import '../../services/api_service.dart';
 
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
   @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  bool _invitationLoading = false;
+
+  @override
   Widget build(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -51,7 +64,7 @@ class SettingsScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Juan Monsalve',
+                      auth.username ?? 'Usuario',
                       style: GoogleFonts.inter(
                         color: AppColors.textPrimary,
                         fontSize: 16,
@@ -117,10 +130,16 @@ class SettingsScreen extends StatelessWidget {
 
         const SizedBox(height: 16),
 
+        // Invitations
+        _sectionLabel('INVITATIONS'),
+        _invitationTile(),
+
+        const SizedBox(height: 16),
+
         // About
         _sectionLabel('ABOUT'),
         _settingsTile(Icons.info_outline_rounded, 'Version', '1.0.0 (Build 1)'),
-        _settingsTile(Icons.shield_rounded, 'Security', 'JWT Token Active'),
+        _settingsTile(Icons.shield_rounded, 'Security', '2FA TOTP Active'),
 
         const SizedBox(height: 24),
 
@@ -128,7 +147,9 @@ class SettingsScreen extends StatelessWidget {
         SizedBox(
           height: 50,
           child: OutlinedButton.icon(
-            onPressed: () {
+            onPressed: () async {
+              await context.read<AuthProvider>().logout();
+              if (!context.mounted) return;
               Navigator.of(context).pushReplacementNamed('/login');
             },
             icon: const Icon(Icons.logout_rounded, color: AppColors.critical),
@@ -210,6 +231,161 @@ class SettingsScreen extends StatelessWidget {
             Icons.chevron_right_rounded,
             color: AppColors.textTertiary,
             size: 18,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _invitationTile() {
+    return GestureDetector(
+      onTap: _invitationLoading ? null : _generateInvitation,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.person_add_rounded,
+              color: AppColors.textSecondary,
+              size: 20,
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Generate Invitation',
+                    style: GoogleFonts.inter(
+                      color: AppColors.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  Text(
+                    'Create a token for new users',
+                    style: GoogleFonts.inter(
+                      color: AppColors.textTertiary,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (_invitationLoading)
+              const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            else
+              const Icon(
+                Icons.add_circle_outline_rounded,
+                color: AppColors.brand,
+                size: 20,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _generateInvitation() async {
+    setState(() => _invitationLoading = true);
+    try {
+      final data = await context.read<ApiService>().createInvitation();
+      if (!mounted) return;
+      setState(() => _invitationLoading = false);
+      final token = data['invitation_token'] as String? ?? '';
+      final expiresAt = data['expires_at'] as String? ?? '';
+      _showInvitationDialog(token, expiresAt);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _invitationLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: AppColors.critical,
+          content: Text(e.message, style: GoogleFonts.inter(color: Colors.white)),
+        ),
+      );
+    }
+  }
+
+  void _showInvitationDialog(String token, String expiresAt) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Invitation Token',
+          style: GoogleFonts.inter(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Share this token with the new user. '
+              'It can only be used once.',
+              style: GoogleFonts.inter(
+                color: AppColors.textSecondary,
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceHigh,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: SelectableText(
+                token,
+                style: GoogleFonts.inter(
+                  color: AppColors.textPrimary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Expires: $expiresAt',
+              style: GoogleFonts.inter(
+                color: AppColors.textTertiary,
+                fontSize: 11,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: token));
+              Future.delayed(const Duration(seconds: 30), () async {
+                final current =
+                    await Clipboard.getData(Clipboard.kTextPlain);
+                if (current?.text == token) {
+                  Clipboard.setData(const ClipboardData(text: ''));
+                }
+              });
+              ScaffoldMessenger.of(ctx).showSnackBar(
+                const SnackBar(content: Text('Token copiado')),
+              );
+            },
+            child: Text('Copy', style: GoogleFonts.inter(color: AppColors.brand)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text('Close', style: GoogleFonts.inter(color: AppColors.textSecondary)),
           ),
         ],
       ),

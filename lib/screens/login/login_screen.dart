@@ -31,7 +31,17 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = false);
 
     if (success) {
-      Navigator.of(context).pushReplacementNamed('/main');
+      if (!mounted) return;
+      switch (auth.state) {
+        case AuthState.pendingTotp:
+          Navigator.of(context).pushReplacementNamed('/totp-verify');
+        case AuthState.pendingEnrollment:
+          Navigator.of(context).pushReplacementNamed('/totp-verify');
+        case AuthState.authenticated:
+          Navigator.of(context).pushReplacementNamed('/main');
+        default:
+          break;
+      }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -194,11 +204,12 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 24),
               Center(
-                child: Text(
-                  'Secured with JWT Authentication',
-                  style: GoogleFonts.inter(
-                    color: AppColors.textTertiary,
-                    fontSize: 12,
+                child: TextButton(
+                  onPressed: () =>
+                      Navigator.of(context).pushNamed('/register'),
+                  child: Text(
+                    'Crear cuenta',
+                    style: GoogleFonts.inter(color: AppColors.brand),
                   ),
                 ),
               ),
