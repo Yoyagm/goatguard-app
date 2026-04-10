@@ -6,7 +6,7 @@ match the data dictionary (DICCIONARIO_DE_DATOS_GOATGuard.docx)
 and the ER diagram.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import (
     Boolean, Column, DateTime, Integer, String, Text,
     BigInteger, ForeignKey, Numeric,
@@ -14,6 +14,16 @@ from sqlalchemy import (
 from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
+
+
+def _utcnow() -> datetime:
+    """Callable por defecto para columnas ``DateTime``.
+
+    Reemplaza la función naive ``utcnow`` (deprecada en Python 3.12+)
+    devolviendo un datetime timezone-aware en UTC. Se pasa sin paréntesis
+    a ``default=`` para que SQLAlchemy lo invoque en cada INSERT.
+    """
+    return datetime.now(timezone.utc)
 
 class RecentConnection(Base):
     """External connections seen in the latest analysis cycle."""
@@ -27,7 +37,7 @@ class RecentConnection(Base):
     proto = Column(String(50), nullable=False)
     total_bytes = Column(BigInteger, nullable=False, default=0)
     connection_count = Column(Integer, nullable=False, default=0)
-    last_seen = Column(DateTime, nullable=False, default=datetime.utcnow)
+    last_seen = Column(DateTime, nullable=False, default=_utcnow)
     
 class Network(Base):
     """A monitored LAN segment."""
@@ -37,7 +47,7 @@ class Network(Base):
     name = Column(String(100), nullable=False)
     subnet = Column(String(45), nullable=False)
     gateway = Column(String(45), nullable=False)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=_utcnow)
 
     devices = relationship("Device", back_populates="network")
     alerts = relationship("Alert", back_populates="network")
@@ -56,8 +66,8 @@ class Device(Base):
     device_type = Column(String(50), nullable=True)
     has_agent = Column(Boolean, nullable=False, default=False)
     status = Column(String(20), nullable=False, default="active")
-    first_seen = Column(DateTime, nullable=False, default=datetime.utcnow)
-    last_seen = Column(DateTime, nullable=False, default=datetime.utcnow)
+    first_seen = Column(DateTime, nullable=False, default=_utcnow)
+    last_seen = Column(DateTime, nullable=False, default=_utcnow)
 
     network = relationship("Network", back_populates="devices")
     agent = relationship("Agent", back_populates="device", uselist=False)
@@ -71,8 +81,8 @@ class Agent(Base):
     device_id = Column(Integer, ForeignKey("device.id"), nullable=False)
     uid = Column(String(100), nullable=False, unique=True)
     status = Column(String(20), nullable=False, default="active")
-    last_heartbeat = Column(DateTime, nullable=False, default=datetime.utcnow)
-    registered_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    last_heartbeat = Column(DateTime, nullable=False, default=_utcnow)
+    registered_at = Column(DateTime, nullable=False, default=_utcnow)
 
     device = relationship("Device", back_populates="agent")
 
@@ -82,7 +92,7 @@ class NetworkSnapshot(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     network_id = Column(Integer, ForeignKey("network.id"), nullable=False)
-    timestamp = Column(DateTime, nullable=False, default=datetime.utcnow)
+    timestamp = Column(DateTime, nullable=False, default=_utcnow)
     isp_latency_avg = Column(Numeric(10, 2), nullable=True)
     packet_loss_pct = Column(Numeric(5, 2), nullable=True)
     jitter = Column(Numeric(10, 2), nullable=True)
@@ -104,7 +114,7 @@ class EndpointSnapshot(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     device_id = Column(Integer, ForeignKey("device.id"), nullable=False)
     network_snapshot_id = Column(Integer, ForeignKey("network_snapshot.id"), nullable=False)
-    timestamp = Column(DateTime, nullable=False, default=datetime.utcnow)
+    timestamp = Column(DateTime, nullable=False, default=_utcnow)
     bandwidth_in = Column(Numeric(15, 2), nullable=True)
     bandwidth_out = Column(Numeric(15, 2), nullable=True)
     tcp_retransmissions = Column(Integer, nullable=False, default=0)
@@ -150,7 +160,7 @@ class Alert(Base):
     description = Column(Text, nullable=False)
     severity = Column(String(20), nullable=False)
     seen = Column(Boolean, nullable=False, default=False)
-    timestamp = Column(DateTime, nullable=False, default=datetime.utcnow)
+    timestamp = Column(DateTime, nullable=False, default=_utcnow)
 
     device = relationship("Device", back_populates="alerts")
     network = relationship("Network", back_populates="alerts")
@@ -162,18 +172,23 @@ class User(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     username = Column(String(50), nullable=False, unique=True)
     password_hash = Column(String(255), nullable=False)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=_utcnow)
 
-    # 2FA TOTP [RF-13]
+    # ── 2FA TOTP [RF-13] ──────────────────────────────────────────────────
+    # totp_secret_enc: cifrado Fernet (AES-128-CBC + HMAC-SHA256). No se
+    # hashea porque debe ser recuperable para verificar códigos TOTP.
     totp_secret_enc = Column(String(500), nullable=True)
     totp_enabled = Column(Boolean, nullable=False, default=False)
     totp_enrolled_at = Column(DateTime(timezone=True), nullable=True)
+    # totp_last_used_at: anti-replay. Si un código cae en el mismo time-step
+    # (30s) que el último uso, se rechaza para cerrar la ventana de replay.
     totp_last_used_at = Column(DateTime(timezone=True), nullable=True)
 
-    # Invalidación de tokens tras cambio de contraseña [RF-13]
+    # ── Invalidación de tokens tras cambio de password [RF-13] ────────────
+    # Cualquier JWT emitido antes de este timestamp se considera inválido.
     password_changed_at = Column(DateTime(timezone=True), nullable=True)
 
-    # Recuperación de contraseña [RF-13]
+    # ── Recuperación de password con recovery code [RF-13] ────────────────
     recovery_code_hash = Column(String(255), nullable=True)
     recovery_code_attempts = Column(Integer, nullable=False, default=0)
     recovery_code_used = Column(Boolean, nullable=False, default=False)
@@ -181,8 +196,47 @@ class User(Base):
     sessions = relationship("Session", back_populates="user")
     push_tokens = relationship("PushToken", back_populates="user")
     totp_backup_codes = relationship(
-        "TotpBackupCode", back_populates="user", cascade="all, delete-orphan",
+        "TotpBackupCode",
+        back_populates="user",
+        cascade="all, delete-orphan",
     )
+
+
+class InvitationToken(Base):
+    """Token de invitación para registro de administrador [RF-13].
+
+    El token plano se entrega fuera de banda (email, Slack, etc.) y se
+    almacena solo como SHA-256 para que una filtración de la BD no exponga
+    tokens reutilizables. ``used=True`` evita que un mismo token cree
+    dos cuentas aunque quien lo invitó lo haya compartido por error.
+    """
+    __tablename__ = "invitation_token"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    token_hash = Column(String(255), nullable=False, unique=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    used = Column(Boolean, nullable=False, default=False)
+    used_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class TotpBackupCode(Base):
+    """Código de respaldo TOTP para acceso de emergencia [RF-13].
+
+    Se generan 10 por usuario en el enrollment. Cada código es single-use
+    (``used=True`` permanente tras verificar) y se almacena como hash bcrypt
+    porque es un secreto equivalente a un segundo factor válido.
+    """
+    __tablename__ = "totp_backup_code"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("user.id"), nullable=False)
+    code_hash = Column(String(255), nullable=False)
+    used = Column(Boolean, nullable=False, default=False)
+    used_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+
+    user = relationship("User", back_populates="totp_backup_codes")
 
 class Session(Base):
     """Active JWT session for a user."""
@@ -192,7 +246,7 @@ class Session(Base):
     user_id = Column(Integer, ForeignKey("user.id"), nullable=False)
     jwt_token = Column(Text, nullable=False)
     mobile_device = Column(String(100), nullable=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=_utcnow)
     expires_at = Column(DateTime, nullable=False)
 
     user = relationship("User", back_populates="sessions")
@@ -205,7 +259,7 @@ class PushToken(Base):
     user_id = Column(Integer, ForeignKey("user.id"), nullable=False)
     token = Column(String(255), nullable=False)
     platform = Column(String(20), nullable=False, default="android")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=_utcnow)
 
     user = relationship("User", back_populates="push_tokens")
 
@@ -268,7 +322,7 @@ class MLPrediction(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     network_id = Column(Integer, ForeignKey("network.id"), nullable=False)
     device_id = Column(Integer, ForeignKey("device.id"), nullable=False)
-    timestamp = Column(DateTime, nullable=False, default=datetime.utcnow)
+    timestamp = Column(DateTime, nullable=False, default=_utcnow)
     src_ip = Column(String(45), nullable=False)
     dst_ip = Column(String(45), nullable=False)
     src_port = Column(Integer, nullable=False)
@@ -282,31 +336,6 @@ class MLPrediction(Base):
     device = relationship("Device")
 
 
-class InvitationToken(Base):
-    """Token de invitación para registro de administrador [RF-13]."""
-    __tablename__ = "invitation_token"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    token_hash = Column(String(255), nullable=False, unique=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    expires_at = Column(DateTime, nullable=False)
-    used = Column(Boolean, nullable=False, default=False)
-    used_at = Column(DateTime, nullable=True)
-
-
-class TotpBackupCode(Base):
-    """Código de respaldo TOTP para acceso de emergencia [RF-13]."""
-    __tablename__ = "totp_backup_code"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("user.id"), nullable=False)
-    code_hash = Column(String(255), nullable=False)
-    used = Column(Boolean, nullable=False, default=False)
-    used_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-
-    user = relationship("User", back_populates="totp_backup_codes")
-
 class Insight(Base):
     """Human-readable observation about network or device state."""
     __tablename__ = "insight"
@@ -314,7 +343,7 @@ class Insight(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     network_id = Column(Integer, ForeignKey("network.id"), nullable=False)
     device_id = Column(Integer, ForeignKey("device.id"), nullable=True)
-    timestamp = Column(DateTime, nullable=False, default=datetime.utcnow)
+    timestamp = Column(DateTime, nullable=False, default=_utcnow)
     category = Column(String(30), nullable=False)
     message = Column(Text, nullable=False)
     severity = Column(String(20), nullable=False)

@@ -1,132 +1,291 @@
 """
-Endpoints de autenticación para GOATGuard API [RF-13, RF-16].
+Endpoints de autenticación con 2FA TOTP [RF-13, RF-16].
 
-POST /auth/register  — Registro con invitation token + setup TOTP
-POST /auth/login     — Login con validación de credenciales
+Flujo completo:
+    POST /auth/register            — Registro con invitation token + setup TOTP
+    POST /auth/login               — Paso 1: credenciales (devuelve pending_totp)
+    POST /auth/totp/enroll/verify  — Verifica primer TOTP → genera backup codes
+    POST /auth/totp/verify         — Paso 2: TOTP → devuelve full_access
+    POST /auth/totp/verify-backup  — Paso 2 alternativo con backup code
+    POST /auth/recovery/verify-code — Valida recovery code → devuelve reset_token
+    POST /auth/recovery/reset-password — Cambia password con reset_token
+    POST /auth/totp/regenerate-backup-codes — Regenera codes (scope=full_access)
 
-Estos son los únicos endpoints públicos (sin JWT).
+Rate limiting con slowapi sobre todos los endpoints sensibles para
+mitigar ataques de fuerza bruta y enumeración.
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer
 from sqlalchemy.orm import Session
 
 from src.api.auth import (
-    hash_password, verify_password, create_token, verify_token_scope,
+    create_token,
+    hash_password,
+    verify_password,
+    verify_token_scope,
 )
-from src.api.dependencies import get_db, get_security_config
+from src.api.dependencies import (
+    get_current_user_pending_totp,
+    get_current_user_totp_verified,
+    get_db,
+    get_security_config,
+)
+from src.api.rate_limit import limiter
 from src.api.registration_utils import (
-    hash_invitation_token, generate_recovery_code,
-    hash_recovery_code, verify_recovery_code,
-    validate_password_nist, check_password_hibp,
-)
-from src.api.totp_utils import (
-    generate_totp_secret, encrypt_secret,
-    generate_totp_uri, generate_qr_png_base64,
-    verify_totp_code, generate_backup_codes,
-    hash_backup_code, verify_backup_code,
+    check_password_hibp,
+    generate_invitation_token,
+    generate_recovery_code,
+    hash_invitation_token,
+    hash_recovery_code,
+    validate_password_nist,
+    verify_recovery_code,
 )
 from src.api.schemas.auth_schemas import (
-    RegisterRequest, RegisterResponse,
-    LoginRequest, LoginStep1Response, TokenResponse,
-    TotpCodeRequest, BackupCodesResponse, BackupCodeVerifyRequest,
-    RecoveryVerifyRequest, RecoveryVerifyResponse,
-    ResetPasswordRequest, RegenerateBackupCodesRequest,
+    BackupCodeVerifyRequest,
+    BackupCodesResponse,
+    BootstrapStatusResponse,
+    InvitationResponse,
+    LoginRequest,
+    LoginStep1Response,
+    RecoveryVerifyRequest,
+    RecoveryVerifyResponse,
+    RegenerateBackupCodesRequest,
+    RegisterRequest,
+    RegisterResponse,
+    ResetPasswordRequest,
+    TokenResponse,
+    TotpCodeRequest,
 )
-from src.api.dependencies import get_current_user, get_current_user_totp_verified
-from src.database.models import User, InvitationToken, TotpBackupCode
+from src.api.totp_utils import (
+    encrypt_secret,
+    generate_backup_codes,
+    generate_qr_png_base64,
+    generate_totp_secret,
+    generate_totp_uri,
+    hash_backup_code,
+    verify_backup_code,
+    verify_totp_code,
+)
+from src.database.models import InvitationToken, TotpBackupCode, User
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
+# Mensajes genéricos para no filtrar estado interno via diferencias de respuesta
+_REGISTER_FAIL = "No se pudo completar el registro"
+_LOGIN_FAIL = "Credenciales inválidas"
+_RECOVERY_FAIL = "Credenciales de recuperación inválidas"
 
-@router.post("/register", response_model=RegisterResponse,
-             status_code=status.HTTP_201_CREATED)
-def register(request: RegisterRequest, db: Session = Depends(get_db)):
-    """Registra un nuevo administrador con invitation token [RF-13].
+# Hash bcrypt pre-calculado para timing-safe comparison cuando el usuario no
+# existe. Sin esto, el timing del endpoint revela si el username es real
+# (no invoca bcrypt) vs inválido (sí lo invoca).
+_DUMMY_BCRYPT_HASH = (
+    "$2b$12$QWqoZ1ivrOIGROvjPVftmO3nlAIBsuS4AS97EmbYfUT62Jy/VwkqC"
+)
+
+
+# ── Bootstrap Status ──────────────────────────────────────────────────────────
+
+
+@router.get(
+    "/bootstrap-status",
+    response_model=BootstrapStatusResponse,
+)
+@limiter.limit("10/minute")
+def bootstrap_status(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Indica si el sistema necesita bootstrap (0 usuarios).
+
+    Endpoint público sin auth. Solo devuelve booleano, no el conteo exacto.
+    """
+    user_count = db.query(User).count()
+    return BootstrapStatusResponse(needs_bootstrap=user_count == 0)
+
+
+# ── Invitaciones ─────────────────────────────────────────────────────────────
+
+
+@router.post(
+    "/invitations",
+    response_model=InvitationResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+@limiter.limit("10/minute")
+def create_invitation(
+    request: Request,
+    current_user: User = Depends(get_current_user_totp_verified),
+    db: Session = Depends(get_db),
+):
+    """Genera un invitation token para registrar otro administrador.
+
+    Requiere scope=full_access (admin autenticado con TOTP verificado).
+    El token se devuelve en claro una sola vez. En BD se guarda el SHA-256.
+    Expiración: 24 horas.
+    """
+    plain_token = generate_invitation_token()
+    token_hash = hash_invitation_token(plain_token)
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(hours=24)
+
+    invitation = InvitationToken(
+        token_hash=token_hash,
+        expires_at=expires_at,
+    )
+    db.add(invitation)
+    db.commit()
+
+    logger.info("Invitation token generado por: %s", current_user.username)
+
+    return InvitationResponse(
+        invitation_token=plain_token,
+        expires_at=expires_at.isoformat(),
+    )
+
+
+# ── Registro ──────────────────────────────────────────────────────────────────
+
+
+@router.post(
+    "/register",
+    response_model=RegisterResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+@limiter.limit("5/minute")
+def register(
+    request: Request,
+    body: RegisterRequest,
+    db: Session = Depends(get_db),
+):
+    """Registra un nuevo administrador [RF-13].
+
+    Rate limit: 5/minute para limitar enumeración de invitation tokens.
+
+    Bootstrap: si la BD tiene 0 usuarios, invitation_token es opcional.
+    A partir del primer usuario, invitation_token es obligatorio.
 
     Flujo:
-    1. Valida invitation token (SHA-256 lookup)
-    2. Verifica username único
-    3. Valida contraseña NIST + HIBP
-    4. Crea user con TOTP secret cifrado + recovery code hasheado
-    5. Retorna JWT scope=pending_totp + datos para enrollment
+    1. Si user_count > 0: invitation token válido (SHA-256 lookup, no usado, no expirado).
+    2. Username no existente.
+    3. Password cumple NIST + no aparece en HIBP (si está habilitado).
+    4. Genera TOTP secret (cifrado) y recovery code (hash bcrypt).
+    5. Marca invitation como usada atómicamente (si aplica).
+    6. Emite JWT scope=pending_totp para completar enrollment.
     """
     security = get_security_config()
 
-    # 1. Validar invitation token
-    token_hash = hash_invitation_token(request.invitation_token)
-    invitation = db.query(InvitationToken).filter_by(
-        token_hash=token_hash,
-    ).first()
+    user_count = db.query(User).count()
+    is_bootstrap = user_count == 0
+    invitation = None
 
-    # Mensaje genérico para no revelar estado del token ni existencia de usuarios
-    _REGISTER_FAIL = "No se pudo completar el registro"
+    if not is_bootstrap:
+        # Requiere invitation token
+        if not body.invitation_token:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=_REGISTER_FAIL,
+            )
+        token_hash = hash_invitation_token(body.invitation_token)
+        invitation = db.query(InvitationToken).filter_by(
+            token_hash=token_hash,
+        ).with_for_update().first()
 
-    if not invitation:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=_REGISTER_FAIL)
+        if not invitation:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=_REGISTER_FAIL,
+            )
 
-    now = datetime.now(timezone.utc)
-    if invitation.used:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=_REGISTER_FAIL)
-    if invitation.expires_at.replace(tzinfo=timezone.utc) < now:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=_REGISTER_FAIL)
+        now = datetime.now(timezone.utc)
+        if invitation.used:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=_REGISTER_FAIL,
+            )
+        expires_at = invitation.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if expires_at < now:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=_REGISTER_FAIL,
+            )
+    elif body.invitation_token:
+        # Bootstrap con token proporcionado — validarlo igualmente
+        token_hash = hash_invitation_token(body.invitation_token)
+        invitation = db.query(InvitationToken).filter_by(
+            token_hash=token_hash,
+        ).with_for_update().first()
 
-    # 2. Username único
-    existing = db.query(User).filter_by(username=request.username).first()
+        if not invitation:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=_REGISTER_FAIL,
+            )
+
+        now = datetime.now(timezone.utc)
+        if invitation.used:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=_REGISTER_FAIL,
+            )
+        expires_at = invitation.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if expires_at < now:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=_REGISTER_FAIL,
+            )
+
+    existing = db.query(User).filter_by(username=body.username).first()
     if existing:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_REGISTER_FAIL)
-
-    # 3. Validar contraseña NIST
-    is_valid, error_msg = validate_password_nist(request.password)
-    if not is_valid:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=error_msg,
+            status_code=status.HTTP_400_BAD_REQUEST, detail=_REGISTER_FAIL,
         )
 
-    # 4. HIBP check (solo si habilitado)
-    if security.hibp_check_enabled:
-        is_compromised = check_password_hibp(request.password)
-        if is_compromised:
+    is_valid, error_msg = validate_password_nist(body.password)
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg,
+        )
+
+    if security is not None and security.hibp_check_enabled:
+        if check_password_hibp(body.password):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Contraseña comprometida en filtraciones conocidas",
             )
 
-    # 5. Crear user
     recovery_code = generate_recovery_code()
     totp_secret = generate_totp_secret()
 
     user = User(
-        username=request.username,
-        password_hash=hash_password(request.password),
+        username=body.username,
+        password_hash=hash_password(body.password),
         totp_secret_enc=encrypt_secret(totp_secret, security.fernet_key),
         totp_enabled=False,
         recovery_code_hash=hash_recovery_code(recovery_code),
     )
     db.add(user)
 
-    # 6. Marcar invitation como usada
-    invitation.used = True
-    invitation.used_at = now
+    if invitation is not None:
+        now = datetime.now(timezone.utc)
+        invitation.used = True
+        invitation.used_at = now
 
     db.commit()
     db.refresh(user)
 
-    # 7. Generar QR y token
-    totp_uri = generate_totp_uri(totp_secret, request.username)
+    totp_uri = generate_totp_uri(totp_secret, body.username)
     qr_base64 = generate_qr_png_base64(totp_uri)
     token = create_token(
-        user.id, user.username,
-        scope="pending_totp", expiration_minutes=60,
+        user.id,
+        user.username,
+        scope="pending_totp",
+        expiration_minutes=60,
     )
 
-    logger.info("Nuevo admin registrado: %s", request.username)
+    logger.info("Nuevo admin registrado: %s", body.username)
 
     return RegisterResponse(
         access_token=token,
@@ -137,29 +296,41 @@ def register(request: RegisterRequest, db: Session = Depends(get_db)):
     )
 
 
+# ── Login paso 1 ──────────────────────────────────────────────────────────────
+
+
 @router.post("/login")
-def login(request: LoginRequest, db: Session = Depends(get_db)):
-    """Autenticación por credenciales [RF-13, RF-16].
+@limiter.limit("10/minute")
+def login(
+    request: Request,
+    body: LoginRequest,
+    db: Session = Depends(get_db),
+):
+    """Autenticación por credenciales — paso 1 del flujo 2FA [RF-13].
 
-    Si TOTP está habilitado, retorna token scope=pending_totp.
-    Si no, retorna token scope=full_access (no debería ocurrir post-registro).
+    Rate limit: 10/minute por IP para mitigar fuerza bruta sin romper
+    usuarios legítimos que fallan el primer intento.
+
+    Timing-safe: ejecuta bcrypt aunque el usuario no exista, usando un
+    hash dummy pre-calculado. Sin esto, el atacante distingue usuarios
+    válidos midiendo el tiempo de respuesta (bcrypt tarda ~100ms).
     """
-    user = db.query(User).filter_by(username=request.username).first()
+    user = db.query(User).filter_by(username=body.username).first()
 
-    # Timing-safe: SIEMPRE ejecutar bcrypt aunque el usuario no exista
     stored_hash = user.password_hash if user else _DUMMY_BCRYPT_HASH
-    password_ok = verify_password(request.password, stored_hash)
+    password_ok = verify_password(body.password, stored_hash)
 
     if not user or not password_ok:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Credenciales inválidas",
+            status_code=status.HTTP_401_UNAUTHORIZED, detail=_LOGIN_FAIL,
         )
 
     if user.totp_enabled:
         token = create_token(
-            user.id, user.username,
-            scope="pending_totp", expiration_minutes=10,
+            user.id,
+            user.username,
+            scope="pending_totp",
+            expiration_minutes=10,
         )
         logger.info("Login paso 1 OK (TOTP pendiente): %s", user.username)
         return LoginStep1Response(
@@ -169,13 +340,17 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
             needs_enrollment=False,
         )
 
-    # TOTP secret creado pero enrollment no completado
+    # Usuario con secret generado pero enrollment incompleto
     if user.totp_secret_enc and user.totp_enrolled_at is None:
         token = create_token(
-            user.id, user.username,
-            scope="pending_totp", expiration_minutes=60,
+            user.id,
+            user.username,
+            scope="pending_totp",
+            expiration_minutes=60,
         )
-        logger.info("Login: enrollment TOTP pendiente para %s", user.username)
+        logger.info(
+            "Login paso 1 OK (enrollment TOTP pendiente): %s", user.username,
+        )
         return LoginStep1Response(
             access_token=token,
             username=user.username,
@@ -183,22 +358,28 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
             needs_enrollment=True,
         )
 
-    # Sin TOTP (usuarios legacy pre-2FA)
+    # Fallback para usuarios legacy pre-2FA (no debería ocurrir en deploys nuevos)
     token = create_token(user.id, user.username, scope="full_access")
-    logger.info("Login completo: %s", user.username)
+    logger.info("Login completo (legacy sin TOTP): %s", user.username)
     return TokenResponse(access_token=token, username=user.username)
 
 
-# ── TOTP Endpoints [RF-13] ────────────────────────────────────────────────────
+# ── TOTP endpoints ────────────────────────────────────────────────────────────
 
 
 @router.post("/totp/enroll/verify", response_model=BackupCodesResponse)
+@limiter.limit("5/minute")
 def totp_enroll_verify(
-    request: TotpCodeRequest,
-    user: User = Depends(get_current_user),
+    request: Request,
+    body: TotpCodeRequest,
+    user: User = Depends(get_current_user_pending_totp),
     db: Session = Depends(get_db),
 ):
-    """Verifica primer código TOTP durante enrollment y genera backup codes."""
+    """Verifica el primer código TOTP del enrollment y emite backup codes.
+
+    Rate limit: 5/minute — el atacante ya tiene un JWT pending_totp, pero
+    limitamos intentos brute-force sobre el primer código.
+    """
     security = get_security_config()
 
     if user.totp_enrolled_at is not None:
@@ -214,27 +395,26 @@ def totp_enroll_verify(
         )
 
     if not verify_totp_code(
-        user.totp_secret_enc, security.fernet_key,
-        request.code, last_used_at=None,
+        user.totp_secret_enc,
+        security.fernet_key,
+        body.code,
+        last_used_at=None,
     ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Código TOTP inválido",
         )
 
-    # Enrollment exitoso
     now = datetime.now(timezone.utc)
     user.totp_enabled = True
     user.totp_enrolled_at = now
     user.totp_last_used_at = now
 
-    # Generar backup codes
     plain_codes = generate_backup_codes(10)
     for code in plain_codes:
-        db.add(TotpBackupCode(
-            user_id=user.id,
-            code_hash=hash_backup_code(code),
-        ))
+        db.add(
+            TotpBackupCode(user_id=user.id, code_hash=hash_backup_code(code))
+        )
 
     db.commit()
     logger.info("TOTP enrollment completado: %s", user.username)
@@ -243,12 +423,19 @@ def totp_enroll_verify(
 
 
 @router.post("/totp/verify", response_model=TokenResponse)
+@limiter.limit("10/minute")
 def totp_verify(
-    request: TotpCodeRequest,
-    user: User = Depends(get_current_user),
+    request: Request,
+    body: TotpCodeRequest,
+    user: User = Depends(get_current_user_pending_totp),
     db: Session = Depends(get_db),
 ):
-    """Verifica código TOTP durante login — retorna token full_access."""
+    """Verifica el código TOTP del segundo paso de login.
+
+    Usa ``SELECT FOR UPDATE`` para prevenir que dos requests concurrentes
+    con el mismo código válido pasen ambas (race de replay). En SQLite
+    el lock es no-op, pero en Postgres bloquea la fila hasta el commit.
+    """
     security = get_security_config()
 
     if not user.totp_enabled:
@@ -257,12 +444,15 @@ def totp_verify(
             detail="TOTP no está habilitado para este usuario",
         )
 
-    # SELECT FOR UPDATE para prevenir race condition de replay [Security Fix #7]
-    user = db.query(User).filter_by(id=user.id).with_for_update().first()
+    user = (
+        db.query(User).filter_by(id=user.id).with_for_update().first()
+    )
 
     if not verify_totp_code(
-        user.totp_secret_enc, security.fernet_key,
-        request.code, last_used_at=user.totp_last_used_at,
+        user.totp_secret_enc,
+        security.fernet_key,
+        body.code,
+        last_used_at=user.totp_last_used_at,
     ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -279,19 +469,26 @@ def totp_verify(
 
 
 @router.post("/totp/verify-backup", response_model=TokenResponse)
+@limiter.limit("5/minute")
 def totp_verify_backup(
-    request: BackupCodeVerifyRequest,
-    user: User = Depends(get_current_user),
+    request: Request,
+    body: BackupCodeVerifyRequest,
+    user: User = Depends(get_current_user_pending_totp),
     db: Session = Depends(get_db),
 ):
-    """Verifica backup code como alternativa a TOTP — retorna token full_access."""
-    backup_codes = db.query(TotpBackupCode).filter_by(
-        user_id=user.id, used=False,
-    ).all()
+    """Verifica un backup code como alternativa al TOTP.
+
+    Cada backup code se invalida tras usarse (``used=True``) — one-shot.
+    """
+    backup_codes = (
+        db.query(TotpBackupCode)
+        .filter_by(user_id=user.id, used=False)
+        .all()
+    )
 
     matched = None
     for bc in backup_codes:
-        if verify_backup_code(request.backup_code, bc.code_hash):
+        if verify_backup_code(body.backup_code, bc.code_hash):
             matched = bc
             break
 
@@ -306,33 +503,37 @@ def totp_verify_backup(
     db.commit()
 
     token = create_token(user.id, user.username, scope="full_access")
-    logger.info("Backup code usado: %s", user.username)
+    logger.info("Backup code consumido: %s", user.username)
 
     return TokenResponse(access_token=token, username=user.username)
 
 
-# ── Recovery Endpoints [RF-13] ─────────────────────────────────────────────────
-
-# Hash bcrypt pre-calculado para timing-safe comparison cuando el usuario no existe
-_DUMMY_BCRYPT_HASH = "$2b$12$QWqoZ1ivrOIGROvjPVftmO3nlAIBsuS4AS97EmbYfUT62Jy/VwkqC"
+# ── Recovery endpoints ────────────────────────────────────────────────────────
 
 
 @router.post("/recovery/verify-code", response_model=RecoveryVerifyResponse)
+@limiter.limit("5/minute")
 def recovery_verify_code(
-    request: RecoveryVerifyRequest,
+    request: Request,
+    body: RecoveryVerifyRequest,
     db: Session = Depends(get_db),
 ):
-    """Verifica recovery code — timing-safe, rate limited por intentos en BD."""
-    user = db.query(User).filter_by(username=request.username).first()
+    """Verifica recovery code — timing-safe + contador de intentos en BD.
 
-    # SIEMPRE ejecutar bcrypt aunque el usuario no exista (timing attack prevention)
+    El flujo de recovery NO usa un JWT previo (el usuario olvidó el
+    password). El rate limit por IP + el contador por usuario (5 intentos
+    máx antes de bloquear) mitigan brute-force sobre el código de 19 chars.
+    """
+    user = db.query(User).filter_by(username=body.username).first()
+
     stored_hash = user.recovery_code_hash if user else _DUMMY_BCRYPT_HASH
 
-    if not user or user.recovery_code_used:
-        verify_recovery_code(request.recovery_code, stored_hash)
+    if not user or user.recovery_code_used or stored_hash is None:
+        # Ejecutamos verify aunque falle para no filtrar estado por timing
+        if stored_hash:
+            verify_recovery_code(body.recovery_code, stored_hash)
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Credenciales de recuperación inválidas",
+            status_code=status.HTTP_400_BAD_REQUEST, detail=_RECOVERY_FAIL,
         )
 
     if user.recovery_code_attempts >= 5:
@@ -341,32 +542,42 @@ def recovery_verify_code(
             detail="Código bloqueado por exceso de intentos",
         )
 
-    is_valid = verify_recovery_code(request.recovery_code, stored_hash)
-
+    is_valid = verify_recovery_code(body.recovery_code, stored_hash)
     if not is_valid:
         user.recovery_code_attempts += 1
         db.commit()
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Credenciales de recuperación inválidas",
+            status_code=status.HTTP_400_BAD_REQUEST, detail=_RECOVERY_FAIL,
         )
 
     reset_token = create_token(
-        user.id, user.username,
-        scope="password_reset", expiration_minutes=15,
+        user.id,
+        user.username,
+        scope="password_reset",
+        expiration_minutes=15,
     )
-    logger.info("Recovery code verificado para: %s", user.username)
+    logger.info("Recovery code verificado: %s", user.username)
 
     return RecoveryVerifyResponse(reset_token=reset_token)
 
 
 @router.post("/recovery/reset-password", response_model=TokenResponse)
+@limiter.limit("5/minute")
 def recovery_reset_password(
-    request: ResetPasswordRequest,
+    request: Request,
+    body: ResetPasswordRequest,
     db: Session = Depends(get_db),
     credentials=Depends(HTTPBearer()),
 ):
-    """Resetea contraseña con reset_token (scope=password_reset)."""
+    """Cambia password usando un reset_token con scope=password_reset.
+
+    Efectos colaterales en commit:
+    - ``password_hash`` actualizado con nuevo bcrypt.
+    - ``password_changed_at`` = now → invalida JWTs emitidos antes.
+    - ``recovery_code_used`` = True, ``recovery_code_hash`` = None →
+      previene reutilización del mismo código.
+    - ``recovery_code_attempts`` = 0 → resetea el contador anti-brute.
+    """
     payload = verify_token_scope(credentials.credentials, "password_reset")
     if not payload:
         raise HTTPException(
@@ -381,22 +592,21 @@ def recovery_reset_password(
             detail="Usuario no encontrado",
         )
 
-    is_valid, error_msg = validate_password_nist(request.new_password)
+    is_valid, error_msg = validate_password_nist(body.new_password)
     if not is_valid:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=error_msg,
+            status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg,
         )
 
     security = get_security_config()
-    if security.hibp_check_enabled:
-        if check_password_hibp(request.new_password):
+    if security is not None and security.hibp_check_enabled:
+        if check_password_hibp(body.new_password):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Contraseña comprometida en filtraciones conocidas",
             )
 
-    user.password_hash = hash_password(request.new_password)
+    user.password_hash = hash_password(body.new_password)
     user.password_changed_at = datetime.now(timezone.utc)
     user.recovery_code_used = True
     user.recovery_code_hash = None
@@ -405,41 +615,49 @@ def recovery_reset_password(
 
     scope = "full_access" if user.totp_enabled else "pending_totp"
     access_token = create_token(user.id, user.username, scope=scope)
-    logger.info("Contraseña reseteada para: %s", user.username)
+    logger.info("Password reseteada: %s", user.username)
 
     return TokenResponse(access_token=access_token, username=user.username)
 
 
-# ── Regenerate Backup Codes [RF-13] ───────────────────────────────────────────
+# ── Regenerate backup codes ───────────────────────────────────────────────────
 
 
-@router.post("/totp/regenerate-backup-codes", response_model=BackupCodesResponse)
+@router.post(
+    "/totp/regenerate-backup-codes",
+    response_model=BackupCodesResponse,
+)
+@limiter.limit("3/minute")
 def regenerate_backup_codes(
-    request: RegenerateBackupCodesRequest,
+    request: Request,
+    body: RegenerateBackupCodesRequest,
     user: User = Depends(get_current_user_totp_verified),
     db: Session = Depends(get_db),
 ):
-    """Regenera backup codes — requiere scope=full_access + contraseña actual."""
-    if not verify_password(request.current_password, user.password_hash):
+    """Regenera los backup codes — requiere scope=full_access + password actual.
+
+    Marca los existentes como usados y crea 10 nuevos. Re-auth por
+    password evita que alguien con un token robado regenere codes.
+    """
+    if not verify_password(body.current_password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Contraseña incorrecta",
         )
 
-    # Marcar todos los existentes como usados
     db.query(TotpBackupCode).filter_by(
         user_id=user.id, used=False,
-    ).update({"used": True, "used_at": datetime.now(timezone.utc)})
+    ).update(
+        {"used": True, "used_at": datetime.now(timezone.utc)}
+    )
 
-    # Generar nuevos
     plain_codes = generate_backup_codes(10)
     for code in plain_codes:
-        db.add(TotpBackupCode(
-            user_id=user.id,
-            code_hash=hash_backup_code(code),
-        ))
+        db.add(
+            TotpBackupCode(user_id=user.id, code_hash=hash_backup_code(code))
+        )
 
     db.commit()
-    logger.info("Backup codes regenerados para: %s", user.username)
+    logger.info("Backup codes regenerados: %s", user.username)
 
     return BackupCodesResponse(backup_codes=plain_codes)

@@ -7,29 +7,23 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from cryptography.fernet import Fernet
-
-from datetime import datetime, timedelta, timezone
-from sqlalchemy.pool import StaticPool
-
 from src.database.models import (
     Base, Device, Network, NetworkCurrentMetrics,
-    DeviceCurrentMetrics, User, InvitationToken,
+    DeviceCurrentMetrics, User,
 )
+from src.api.auth import create_token, hash_password
 from src.api.dependencies import get_db
 from src.api.app import create_app
-from src.api.auth import hash_password, create_token
-from src.api.registration_utils import generate_invitation_token, hash_invitation_token
 from src.config.models import ServerConfig, SecurityConfig
+from datetime import datetime, timezone
 
-TEST_FERNET_KEY = Fernet.generate_key().decode()
-TEST_DATABASE_URL = "sqlite:///:memory:"
+TEST_DATABASE_URL = "sqlite:///./test_goatguard.db"
 
 
 @pytest.fixture(scope="module")
 def test_app():
     """Create a test app with SQLite database."""
-    engine = create_engine(TEST_DATABASE_URL, connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    engine = create_engine(TEST_DATABASE_URL, connect_args={"check_same_thread": False})
     Base.metadata.create_all(bind=engine)
     TestSession = sessionmaker(bind=engine, expire_on_commit=False)
 
@@ -46,8 +40,6 @@ def test_app():
         jwt_secret="test-secret-for-endpoint-testing-goatguard",
         jwt_algorithm="HS256",
         jwt_expiration_hours=24,
-        fernet_key=TEST_FERNET_KEY,
-        hibp_check_enabled=False,
     )
 
     # Create app with required arguments
@@ -81,7 +73,7 @@ def test_app():
 
     metrics = DeviceCurrentMetrics(
         device_id=device.id,
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         cpu_pct=15.0, ram_pct=42.0, bandwidth_in=500.0,
         bandwidth_out=100.0, tcp_retransmissions=0, failed_connections=2,
     )
@@ -89,7 +81,7 @@ def test_app():
 
     net_metrics = NetworkCurrentMetrics(
         network_id=network.id,
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         isp_latency_avg=11.5, packet_loss_pct=0.0, jitter=0.2,
         active_connections=50, failed_connections_global=5,
     )
@@ -114,72 +106,58 @@ def test_app():
     # Cleanup
     Base.metadata.drop_all(bind=engine)
     engine.dispose()
+    import os
+    try:
+        os.remove("test_goatguard.db")
+    except OSError:
+        pass
 
 
 @pytest.fixture(scope="module")
 def auth_token(test_app):
-    """Crea un admin directamente en BD y retorna JWT scope=full_access."""
-    session = test_app["SessionLocal"]()
-    user = session.query(User).filter_by(username="testadmin").first()
-    if not user:
-        user = User(
-            username="testadmin",
-            password_hash=hash_password("TestPassword2025!!"),
-            totp_enabled=False,
-        )
-        session.add(user)
-        session.commit()
-        session.refresh(user)
-    session.close()
-    return create_token(user.id, user.username, scope="full_access")
+    """Siembra un usuario directamente en BD y retorna un JWT válido.
+
+    El flujo completo de ``/auth/register`` (con invitation token, TOTP
+    enrollment, backup codes, etc.) se cubre en ``test_auth_register.py``
+    y ``test_auth_totp.py`` [RF-13]. Este fixture se limita a proveer
+    una credencial válida para los tests de endpoints de negocio
+    (devices, networks, alerts, dashboard) sin depender del pipeline
+    público de autenticación.
+    """
+    TestSession = test_app["SessionLocal"]
+    session = TestSession()
+    try:
+        user = session.query(User).filter_by(username="testadmin").first()
+        if user is None:
+            user = User(
+                username="testadmin",
+                password_hash=hash_password(
+                    "testpassword123-long-enough-for-nist"
+                ),
+            )
+            session.add(user)
+            session.commit()
+            session.refresh(user)
+        return create_token(user_id=user.id, username=user.username)
+    finally:
+        session.close()
 
 
 class TestAuthEndpoints:
-    """Tests for /auth/* endpoints."""
+    """Tests de guardado mínimo para ``/auth/*``.
 
-    def test_register_requires_invitation_token(self, test_app):
-        """Registro sin invitation_token → 422."""
-        client = test_app["client"]
-        response = client.post("/auth/register", json={
-            "username": "newuser",
-            "password": "ValidPassword2025!!",
-        })
-        assert response.status_code == 422
+    El flujo 2FA completo (register, totp/*, recovery/*) se prueba en
+    ``test_auth_register.py``, ``test_auth_totp.py`` y
+    ``test_auth_recovery.py``. Aquí solo mantenemos los invariantes
+    más básicos para detectar regresiones generales rápido.
+    """
 
-    def test_register_with_valid_token(self, test_app):
-        """Registro con invitation token válido → 201."""
-        client = test_app["client"]
-        session = test_app["SessionLocal"]()
-        token = generate_invitation_token()
-        inv = InvitationToken(
-            token_hash=hash_invitation_token(token),
-            expires_at=datetime.now(timezone.utc) + timedelta(hours=24),
-        )
-        session.add(inv)
-        session.commit()
-        session.close()
+    def test_login_wrong_password(self, test_app, auth_token):
+        """Login con password incorrecto debe retornar 401.
 
-        response = client.post("/auth/register", json={
-            "username": "newuser",
-            "password": "ValidPassword2025!!",
-            "invitation_token": token,
-        })
-        assert response.status_code == 201
-        data = response.json()
-        assert "access_token" in data
-        assert "recovery_code" in data
-
-    def test_login_valid_credentials(self, test_app, auth_token):
-        """Login con credenciales correctas → 200."""
-        client = test_app["client"]
-        response = client.post("/auth/login", json={
-            "username": "testadmin",
-            "password": "TestPassword2025!!",
-        })
-        assert response.status_code == 200
-        assert "access_token" in response.json()
-
-    def test_login_wrong_password(self, test_app):
+        El fixture ``auth_token`` garantiza que el user ``testadmin``
+        ya existe en la BD antes de este test.
+        """
         client = test_app["client"]
 
         response = client.post("/auth/login", json={

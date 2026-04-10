@@ -8,7 +8,7 @@ to change queries without touching the rest of the system.
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from src.discovery.enrichment import enrich_device_vendor
 
 from src.database.models import (
@@ -17,6 +17,7 @@ from src.database.models import (
     DeviceCurrentMetrics,
     Network,
     NetworkCurrentMetrics,
+    PushToken,
     TopTalkerCurrent,
 )
 
@@ -61,8 +62,8 @@ class Repository:
             agent = session.query(Agent).filter_by(uid=agent_id).first()
 
             if agent:
-                agent.last_heartbeat = datetime.utcnow()
-                agent.device.last_seen = datetime.utcnow()
+                agent.last_heartbeat = datetime.now(timezone.utc)
+                agent.device.last_seen = datetime.now(timezone.utc)
                 agent.device.ip = sender_ip
                 session.commit()
                 return agent.device_id
@@ -82,7 +83,7 @@ class Repository:
                 device.hostname = hostname
                 device.has_agent = True
                 device.status = "active"
-                device.last_seen = datetime.utcnow()
+                device.last_seen = datetime.now(timezone.utc)
             else:
                 # Completely new device
                 device = Device(
@@ -134,7 +135,7 @@ class Repository:
                 device_id=device_id
             ).first()
 
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
 
             if current:
                 current.timestamp = now
@@ -253,7 +254,7 @@ class Repository:
                 network_id=network_id
             ).first()
 
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
 
             if current:
                 current.timestamp = now
@@ -368,11 +369,11 @@ class Repository:
         try:
             agent = session.query(Agent).filter_by(uid=agent_id).first()
             if agent:
-                agent.last_heartbeat = datetime.utcnow()
+                agent.last_heartbeat = datetime.now(timezone.utc)
                 agent.status = "active"
                 if agent.device:
                     agent.device.status = "active"
-                    agent.device.last_seen = datetime.utcnow()
+                    agent.device.last_seen = datetime.now(timezone.utc)
                 session.commit()
         except Exception as e:
             session.rollback()
@@ -396,7 +397,7 @@ class Repository:
                 network_id=network_id
             ).first()
 
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
 
             if current:
                 current.timestamp = now
@@ -447,7 +448,7 @@ class Repository:
 
             if device:
                 device.ip = ip
-                device.last_seen = datetime.utcnow()
+                device.last_seen = datetime.now(timezone.utc)
                 if not device.has_agent:
                     device.status = "active"
                 if not device.detected_type:
@@ -532,7 +533,7 @@ class Repository:
             snapshot = EndpointSnapshot(
                 device_id=device_id,
                 network_snapshot_id=network_snapshot_id,
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 # System metrics from UDP (device_current_metrics)
                 cpu_pct=current.cpu_pct if current else None,
                 ram_pct=current.ram_pct if current else None,
@@ -579,7 +580,7 @@ class Repository:
 
             snapshot = NetworkSnapshot(
                 network_id=network_id,
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 # ISP metrics from probe (network_current_metrics)
                 isp_latency_avg=current.isp_latency_avg if current else None,
                 packet_loss_pct=current.packet_loss_pct if current else None,
@@ -704,7 +705,7 @@ class Repository:
                     proto=data["proto"],
                     total_bytes=data["total_bytes"],
                     connection_count=data["count"],
-                    last_seen=datetime.utcnow(),
+                    last_seen=datetime.now(timezone.utc),
                 )
                 session.add(entry)
 
@@ -714,6 +715,82 @@ class Repository:
         except Exception as e:
             session.rollback()
             logger.error(f"Failed to save recent connections: {e}")
+        finally:
+            session.close()
+
+    # ── Push token operations ──────────────────────────────────
+
+    def upsert_push_token(self, user_id: int, token: str,
+                          platform: str = "android") -> None:
+        """Register or update an FCM push token for a user.
+
+        If the token already exists for this user, updates the
+        timestamp. If it belongs to another user (device changed
+        accounts), reassigns it. Otherwise creates a new record.
+        """
+        session = self._get_session()
+        try:
+            existing = session.query(PushToken).filter_by(token=token).first()
+
+            if existing:
+                existing.user_id = user_id
+                existing.platform = platform
+                existing.created_at = datetime.now(timezone.utc)
+            else:
+                entry = PushToken(
+                    user_id=user_id,
+                    token=token,
+                    platform=platform,
+                )
+                session.add(entry)
+
+            session.commit()
+            logger.info(f"Push token registered for user {user_id} ({platform})")
+
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Failed to upsert push token: {e}")
+        finally:
+            session.close()
+
+    def delete_push_token(self, token: str) -> None:
+        """Remove an FCM token (used on logout or when token is invalid)."""
+        session = self._get_session()
+        try:
+            session.query(PushToken).filter_by(token=token).delete()
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Failed to delete push token: {e}")
+        finally:
+            session.close()
+
+    def get_all_push_tokens(self) -> list[str]:
+        """Return all registered FCM tokens for broadcast."""
+        session = self._get_session()
+        try:
+            tokens = session.query(PushToken.token).all()
+            return [t[0] for t in tokens]
+        except Exception as e:
+            logger.error(f"Failed to fetch push tokens: {e}")
+            return []
+        finally:
+            session.close()
+
+    def delete_push_tokens_batch(self, tokens: list[str]) -> None:
+        """Remove multiple invalid FCM tokens in one transaction."""
+        if not tokens:
+            return
+        session = self._get_session()
+        try:
+            session.query(PushToken).filter(
+                PushToken.token.in_(tokens)
+            ).delete(synchronize_session="fetch")
+            session.commit()
+            logger.info(f"Removed {len(tokens)} invalid push tokens")
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Failed to batch-delete push tokens: {e}")
         finally:
             session.close()
 

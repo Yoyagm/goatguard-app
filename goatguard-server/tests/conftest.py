@@ -9,22 +9,17 @@ import sys
 sys.path.insert(0, ".")
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
-from cryptography.fernet import Fernet
+from tests.db_test_utils import make_test_engine
 
 from src.api.auth import init_auth, create_token
 from src.api.dependencies import get_db
-from src.config.models import ServerConfig, SecurityConfig
-from src.database.models import (
-    Base, User, Network, Device, Agent,
-    InvitationToken,
-)
+from src.config.models import ServerConfig
+from src.database.models import Base, User, Network, Device, Agent
 from src.api.auth import hash_password
 
 # ── Configuración de auth para tests ─────────────────────────────────────────
@@ -34,7 +29,6 @@ from src.api.auth import hash_password
 TEST_JWT_SECRET = "goatguard-test-secret-key-for-pytest-suite"
 TEST_JWT_ALGORITHM = "HS256"
 TEST_JWT_EXPIRATION_HOURS = 1
-TEST_FERNET_KEY = Fernet.generate_key().decode()
 
 
 # ── Engine SQLite in-memory ───────────────────────────────────────────────────
@@ -54,14 +48,16 @@ def db_session():
     """
     Crea un engine SQLite in-memory y una sesión limpia para cada test.
 
-    check_same_thread=False es necesario porque pytest y FastAPI
-    pueden usar el mismo engine desde hilos distintos.
+    ``check_same_thread=False`` + ``StaticPool`` son obligatorios:
+    - FastAPI TestClient ejecuta los endpoints en un threadpool distinto
+      del hilo de pytest.
+    - SQLite ``:memory:`` crea una BD NUEVA por conexión. Sin StaticPool,
+      cada hilo recibiría una BD vacía y las tablas creadas por
+      ``Base.metadata.create_all`` no serían visibles desde el handler.
+    StaticPool fuerza al engine a reutilizar una única conexión para
+    todos los hilos, unificando la BD in-memory.
     """
-    engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+    engine = make_test_engine()
     Base.metadata.create_all(engine)
     TestingSession = sessionmaker(bind=engine)
     session = TestingSession()
@@ -87,8 +83,6 @@ def client(db_session):
     # Sobreescribimos el secret para que create_app inicialice auth
     # con el mismo secret que usamos en los fixtures de token.
     config.security.jwt_secret = TEST_JWT_SECRET
-    config.security.fernet_key = TEST_FERNET_KEY
-    config.security.hibp_check_enabled = False
 
     # Database falso: create_app llama set_database(database) y
     # broadcast_loop(database.get_session). Pasamos un stub mínimo.
@@ -126,7 +120,7 @@ def seed_data(db_session):
     Devuelve un dict con los objetos creados para que los tests
     puedan inspeccionarlos sin re-consultar.
     """
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     # Network
     network = Network(
@@ -223,34 +217,3 @@ def auth_headers(seed_data):
     user = seed_data["user"]
     token = create_token(user_id=user.id, username=user.username)
     return {"Authorization": f"Bearer {token}"}
-
-
-@pytest.fixture()
-def security_config():
-    """SecurityConfig para tests con fernet_key y HIBP deshabilitado."""
-    return SecurityConfig(
-        jwt_secret=TEST_JWT_SECRET,
-        jwt_algorithm=TEST_JWT_ALGORITHM,
-        jwt_expiration_hours=TEST_JWT_EXPIRATION_HOURS,
-        fernet_key=TEST_FERNET_KEY,
-        hibp_check_enabled=False,
-    )
-
-
-@pytest.fixture()
-def invitation_token(db_session):
-    """Crea un InvitationToken válido y retorna el token en texto plano."""
-    from src.api.registration_utils import (
-        generate_invitation_token, hash_invitation_token,
-    )
-    from datetime import timezone
-
-    plain_token = generate_invitation_token()
-    token_hash = hash_invitation_token(plain_token)
-    expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
-
-    inv = InvitationToken(token_hash=token_hash, expires_at=expires_at)
-    db_session.add(inv)
-    db_session.commit()
-
-    return plain_token
