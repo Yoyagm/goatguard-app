@@ -13,7 +13,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 /// Manages Firebase Cloud Messaging lifecycle.
 class FcmService {
-  final FirebaseMessaging _messaging = FirebaseMessaging.instance;
+  FirebaseMessaging? _messaging;
   final ApiService _api;
 
   String? _currentToken;
@@ -28,7 +28,8 @@ class FcmService {
   String? get currentToken => _currentToken;
 
   Future<void> initialize() async {
-    final settings = await _messaging.requestPermission(
+    _messaging = FirebaseMessaging.instance;
+    final settings = await _messaging!.requestPermission(
       alert: true,
       badge: true,
       sound: true,
@@ -41,10 +42,10 @@ class FcmService {
 
     await _createNotificationChannel();
 
-    _currentToken = await _messaging.getToken();
+    _currentToken = await _messaging!.getToken();
     debugPrint('FCM token: $_currentToken');
 
-    _tokenRefreshSub = _messaging.onTokenRefresh.listen((newToken) {
+    _tokenRefreshSub = _messaging!.onTokenRefresh.listen((newToken) {
       _currentToken = newToken;
       _registerTokenWithBackend(newToken);
     });
@@ -54,7 +55,7 @@ class FcmService {
 
     FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
 
-    final initial = await _messaging.getInitialMessage();
+    final initial = await _messaging!.getInitialMessage();
     if (initial != null) {
       _handleNotificationTap(initial);
     }
