@@ -60,6 +60,12 @@ class _MainShellState extends State<MainShell> {
       unseenAlerts: alertProv.unseenCount,
     );
 
+    // Wire FCM callbacks for foreground refresh and notification tap
+    auth.fcmService.onForegroundAlert = () => alertProv.fetchAlerts();
+    auth.fcmService.onNotificationTap = () {
+      if (mounted) setState(() => _currentIndex = 3);
+    };
+
     // Conectar WebSocket para real-time
     final token = await auth.getToken();
     if (token != null) {

@@ -13,6 +13,7 @@
 //
 // Estrategia de fake sin mockito:
 //   _FakeApiService extiende ApiService inyectando un Dio dummy.
+// ignore_for_file: depend_on_referenced_packages
 //   Sobreescribe únicamente los métodos que cada grupo de tests necesita.
 //   FlutterSecureStorage se intercepta con el platform channel mock
 //   (mismo patrón que test/widget_test.dart).
@@ -22,6 +23,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:goatguard_app/providers/auth_provider.dart';
 import 'package:goatguard_app/services/api_service.dart';
+import 'package:goatguard_app/services/fcm_service.dart';
 
 // ─── Infraestructura de fakes ─────────────────────────────────────────────────
 
@@ -124,7 +126,7 @@ void main() {
       fakeApi = _FakeApiService();
       store = {};
       _mockSecureStorage(store);
-      provider = AuthProvider(fakeApi);
+      provider = AuthProvider(fakeApi, FcmService(fakeApi));
     });
 
     test(
@@ -234,7 +236,7 @@ void main() {
       fakeApi = _FakeApiService();
       store = {};
       _mockSecureStorage(store);
-      provider = AuthProvider(fakeApi);
+      provider = AuthProvider(fakeApi, FcmService(fakeApi));
     });
 
     test(
@@ -343,7 +345,7 @@ void main() {
       fakeApi = _FakeApiService();
       store = {};
       _mockSecureStorage(store);
-      provider = AuthProvider(fakeApi);
+      provider = AuthProvider(fakeApi, FcmService(fakeApi));
 
       // Llevar el provider a pendingTotp primero (Transición 5)
       fakeApi.loginResponse = {
@@ -439,7 +441,7 @@ void main() {
       fakeApi = _FakeApiService();
       store = {};
       _mockSecureStorage(store);
-      provider = AuthProvider(fakeApi);
+      provider = AuthProvider(fakeApi, FcmService(fakeApi));
 
       // Llevar el provider a pendingEnrollment (Transición 6)
       fakeApi.loginResponse = {
@@ -529,7 +531,7 @@ void main() {
       fakeApi = _FakeApiService();
       store = {};
       _mockSecureStorage(store);
-      provider = AuthProvider(fakeApi);
+      provider = AuthProvider(fakeApi, FcmService(fakeApi));
 
       // Llevar a authenticated via login legacy
       fakeApi.loginResponse = {
@@ -592,7 +594,7 @@ void main() {
       fakeApi = _FakeApiService();
       store = {};
       _mockSecureStorage(store);
-      provider = AuthProvider(fakeApi);
+      provider = AuthProvider(fakeApi, FcmService(fakeApi));
     });
 
     test(
@@ -684,7 +686,7 @@ void main() {
       fakeApi = _FakeApiService();
       store = {};
       _mockSecureStorage(store);
-      provider = AuthProvider(fakeApi);
+      provider = AuthProvider(fakeApi, FcmService(fakeApi));
     });
 
     test(

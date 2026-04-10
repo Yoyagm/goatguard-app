@@ -11,6 +11,7 @@ import 'package:provider/provider.dart';
 import 'package:goatguard_app/providers/auth_provider.dart';
 import 'package:goatguard_app/services/api_service.dart';
 import 'package:goatguard_app/screens/auth/totp_enroll_screen.dart';
+import 'package:goatguard_app/services/fcm_service.dart';
 
 class _FakeApiService extends ApiService {
   _FakeApiService() : super(dio: Dio(BaseOptions(baseUrl: 'http://test')));
@@ -69,7 +70,7 @@ void main() {
     fakeApi = _FakeApiService();
     store = {};
     _mockStorage(store);
-    provider = AuthProvider(fakeApi);
+    provider = AuthProvider(fakeApi, FcmService(fakeApi));
     await provider.login('admin', 'pass');
   });
 
