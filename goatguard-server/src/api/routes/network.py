@@ -3,24 +3,21 @@ Network endpoints for GOATGuard API.
 
 GET /network/metrics      — Current network health and ISP status
 GET /network/top-talkers  — Bandwidth consumption ranking
-GET /network/history      — Historical network snapshots
 
 All endpoints require JWT authentication.
 """
 
 import logging
 
-from datetime import datetime, timedelta
-
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import Optional, List
 
-from src.api.dependencies import get_db, get_current_user_totp_verified
+from src.api.dependencies import get_db, get_current_user
 from src.database.models import (
     User, Network, NetworkCurrentMetrics,
-    TopTalkerCurrent, Device, NetworkSnapshot, TopTalker, RecentConnection,
+    TopTalkerCurrent, Device, NetworkSnapshot, TopTalker, RecentConnection
 )
 
 logger = logging.getLogger(__name__)
@@ -121,7 +118,7 @@ class IspHealthResponse(BaseModel):
 @router.get("/metrics", response_model=NetworkMetricsResponse)
 def get_network_metrics(
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user_totp_verified),
+    user: User = Depends(get_current_user),
 ):
     """Get current network health metrics.
 
@@ -182,42 +179,10 @@ def get_network_metrics(
     return result
 
 
-@router.get("/history")
-def get_network_history(
-    hours: int = Query(default=4, ge=1, le=168, description="Hours of history"),
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user_totp_verified),
-):
-    """Get historical network snapshots for charts.
-
-    Returns ISP metrics over time, ordered chronologically.
-    RF-040 — Métricas históricas de la red
-    """
-    cutoff = datetime.utcnow() - timedelta(hours=hours)
-    snapshots = (
-        db.query(NetworkSnapshot)
-        .filter(NetworkSnapshot.timestamp >= cutoff)
-        .order_by(NetworkSnapshot.timestamp.asc())
-        .all()
-    )
-
-    return [
-        {
-            "timestamp": s.timestamp.isoformat() if s.timestamp else None,
-            "isp_latency_avg": float(s.isp_latency_avg) if s.isp_latency_avg else 0,
-            "packet_loss_pct": float(s.packet_loss_pct) if s.packet_loss_pct else 0,
-            "jitter": float(s.jitter) if s.jitter else 0,
-            "active_connections": s.active_connections or 0,
-            "failed_connections_global": s.failed_connections_global or 0,
-        }
-        for s in snapshots
-    ]
-
-
 @router.get("/top-talkers", response_model=List[TopTalkerResponse])
 def get_top_talkers(
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user_totp_verified),
+    user: User = Depends(get_current_user),
 ):
     """Get the current bandwidth consumption ranking.
 
@@ -245,11 +210,43 @@ def get_top_talkers(
 
     return result
 
+@router.get("/history", response_model=List[NetworkSnapshotResponse])
+def get_network_history(
+    hours: int = 4,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Get historical network metrics.
+
+    Returns snapshots from the last N hours (default 4).
+    Used for ISP health trend graphs.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+
+    snapshots = db.query(NetworkSnapshot).filter(
+        NetworkSnapshot.timestamp >= cutoff,
+    ).order_by(NetworkSnapshot.timestamp.asc()).all()
+
+    result = []
+    for s in snapshots:
+        result.append({
+            "timestamp": str(s.timestamp),
+            "isp_latency_avg": float(s.isp_latency_avg) if s.isp_latency_avg is not None else None,
+            "packet_loss_pct": float(s.packet_loss_pct) if s.packet_loss_pct is not None else None,
+            "jitter": float(s.jitter) if s.jitter is not None else None,
+            "active_connections": s.active_connections,
+            "failed_connections_global": s.failed_connections_global or 0,
+        })
+
+    return result
+
 @router.get("/top-talkers/history", response_model=List[TopTalkerSnapshotResponse])
 def get_top_talkers_history(
     hours: int = 4,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user_totp_verified),
+    user: User = Depends(get_current_user),
 ):
     """Get historical top talker rankings.
 
@@ -257,9 +254,9 @@ def get_top_talkers_history(
     Each snapshot contains the full ranking for that cycle.
     Used for bandwidth consumption trend graphs.
     """
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
 
-    cutoff = datetime.utcnow() - timedelta(hours=hours)
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
 
     snapshots = db.query(NetworkSnapshot).filter(
         NetworkSnapshot.timestamp >= cutoff,
@@ -289,7 +286,7 @@ def get_top_talkers_history(
 @router.get("/traffic-distribution", response_model=TrafficDistributionResponse)
 def get_traffic_distribution(
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user_totp_verified),
+    user: User = Depends(get_current_user),
 ):
     """Get traffic breakdown by protocol, direction, and port.
 
@@ -359,7 +356,7 @@ def get_traffic_distribution(
 @router.get("/isp-health", response_model=IspHealthResponse)
 def get_isp_health(
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user_totp_verified),
+    user: User = Depends(get_current_user),
 ):
     """Get detailed ISP health with 1-hour historical context.
 
@@ -367,7 +364,7 @@ def get_isp_health(
     status classification based on ITU-T G.114 thresholds.
     Designed for gauge/speedometer widgets.
     """
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
 
     network = db.query(Network).first()
 
@@ -386,7 +383,7 @@ def get_isp_health(
             current_jitter = float(metrics.jitter) if metrics.jitter is not None else None
 
     # 1-hour historical stats from snapshots
-    cutoff = datetime.utcnow() - timedelta(hours=1)
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
     snapshots = db.query(NetworkSnapshot).filter(
         NetworkSnapshot.timestamp >= cutoff,
     ).all()

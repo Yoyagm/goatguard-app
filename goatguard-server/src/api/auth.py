@@ -95,12 +95,28 @@ def create_token(
     scope: str = "full_access",
     expiration_minutes: Optional[int] = None,
 ) -> str:
-    """Crea JWT con scope explícito [RF-13].
+    """Create a signed JWT token con scope explícito [RF-13].
 
-    Scopes válidos: "full_access", "pending_totp", "password_reset"
+    Scopes válidos en el flujo 2FA:
+        - ``full_access``: acceso normal tras password + TOTP verificado.
+        - ``pending_totp``: solo habilita los endpoints del segundo factor.
+        - ``password_reset``: solo habilita reset de contraseña tras
+          presentar un recovery code válido.
+
+    ``expiration_minutes`` permite emitir tokens efímeros (ej. 5 min
+    para ``pending_totp``) sin tocar la configuración global. Si se
+    omite, se usa ``jwt_expiration_hours`` convertido a minutos.
+
+    El payload contiene además ``sub`` (user id), ``username``, ``iat``
+    (issued-at) y ``exp`` (expiration). El token tiene tres partes
+    separadas por puntos: ``header.payload.signature``. Cualquiera
+    puede leer el payload (base64, no cifrado), pero solo el server
+    puede firmar porque solo él conoce el secreto.
     """
     now = datetime.now(timezone.utc)
-    exp_minutes = expiration_minutes or (_jwt_expiration_hours * 60)
+    exp_minutes = expiration_minutes if expiration_minutes is not None else (
+        _jwt_expiration_hours * 60
+    )
     payload = {
         "sub": str(user_id),
         "username": username,
@@ -138,12 +154,17 @@ def verify_token(token: str) -> Optional[dict]:
 
 
 def verify_token_scope(token: str, required_scope: str) -> Optional[dict]:
-    """
-    Verifica token JWT y que tenga el scope requerido.
-    Retorna payload si válido, None si inválido o scope incorrecto.
+    """Verifica un JWT y exige un ``scope`` específico [RF-13].
+
+    Devuelve el payload solo si el token es válido Y su scope coincide
+    con ``required_scope``. En cualquier otro caso retorna ``None`` —
+    el caller debe interpretar eso como 401/403 según el endpoint.
+
+    Separar esta función de ``verify_token`` mantiene el contrato del
+    decode simple para los endpoints legacy que no usan scopes.
     """
     payload = verify_token(token)
-    if not payload:
+    if payload is None:
         return None
     if payload.get("scope") != required_scope:
         return None

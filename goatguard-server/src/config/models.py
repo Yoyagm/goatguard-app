@@ -13,13 +13,42 @@ class ConfigError(Exception):
     pass
 
 
+def _default_cors_origins() -> list[str]:
+    """Orígenes permitidos por defecto para desarrollo local.
+
+    En producción se debe sobrescribir desde ``server_config.yaml`` o
+    variables de entorno con el dominio público de la app móvil.
+    Nunca usar ``["*"]`` porque la API acepta credenciales (JWT).
+    """
+    return [
+        "http://localhost",
+        "http://localhost:3000",
+        "http://localhost:8000",
+        "http://127.0.0.1",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:8000",
+    ]
+
+
 @dataclass
 class SecurityConfig:
-    """Security settings for authentication and encryption."""
+    """Security settings for authentication and encryption.
+
+    ``fernet_key`` y ``hibp_check_enabled`` sostienen el flujo 2FA
+    [RF-13]: el primero cifra los secretos TOTP (AES-128-CBC + HMAC),
+    el segundo permite apagar la consulta a HaveIBeenPwned en redes
+    aisladas donde el fail-open no aporta valor.
+    """
     jwt_secret: str = "goatguard-dev-secret-change-in-production"
     jwt_algorithm: str = "HS256"
     jwt_expiration_hours: int = 24
-    fernet_key: str = ""  # Cifrado TOTP secrets — generar con Fernet.generate_key()
+    cors_origins: list[str] = field(default_factory=_default_cors_origins)
+    # Clave Fernet para cifrar secretos TOTP. Vacía por defecto: debe
+    # inyectarse vía server_config.yaml o env var antes de habilitar 2FA.
+    # Generar con ``cryptography.fernet.Fernet.generate_key()``.
+    fernet_key: str = ""
+    # Verificación de passwords contra HaveIBeenPwned (k-anonymity).
+    # Fail-open con warning cuando la red no permite alcanzar el servicio.
     hibp_check_enabled: bool = True
 
 @dataclass
@@ -65,6 +94,13 @@ class LoggingConfig:
 
 
 @dataclass
+class FirebaseConfig:
+    """Firebase Cloud Messaging settings for push notifications."""
+    credentials_path: str = "config/firebase-service-account.json"
+    enabled: bool = True
+
+
+@dataclass
 class ServerConfig:
     """Root configuration object grouping all sections.
 
@@ -78,3 +114,4 @@ class ServerConfig:
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     security: SecurityConfig = field(default_factory=SecurityConfig)
+    firebase: FirebaseConfig = field(default_factory=FirebaseConfig)

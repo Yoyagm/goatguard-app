@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import Optional, List
 
-from src.api.dependencies import get_db, get_current_user_totp_verified
+from src.api.dependencies import get_db, get_current_user
 from src.database.models import User, Device, DeviceCurrentMetrics, Agent, EndpointSnapshot, RecentConnection
 
 logger = logging.getLogger(__name__)
@@ -116,7 +116,7 @@ class DeviceComparisonEntry(BaseModel):
 @router.get("/", response_model=List[DeviceSummary])
 def list_devices(
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user_totp_verified),
+    user: User = Depends(get_current_user),
 ):
     """List all devices in the network inventory.
 
@@ -131,7 +131,7 @@ def list_devices(
 def compare_devices(
     metric: str = "bandwidth_in",
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user_totp_verified),
+    user: User = Depends(get_current_user),
 ):
     """Compare all devices by a specific metric.
 
@@ -182,7 +182,7 @@ def compare_devices(
 def get_device(
     device_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user_totp_verified),
+    user: User = Depends(get_current_user),
 ):
     """Get full detail of a device including current metrics.
 
@@ -257,7 +257,7 @@ def update_alias(
     device_id: int,
     request: AliasRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user_totp_verified),
+    user: User = Depends(get_current_user),
 ):
     """Update the display alias of a device.
 
@@ -291,7 +291,7 @@ def get_device_history(
     device_id: int,
     hours: int = 4,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user_totp_verified),
+    user: User = Depends(get_current_user),
 ):
     """Get historical metrics for a device.
 
@@ -302,9 +302,9 @@ def get_device_history(
         device_id: The device to query.
         hours: How many hours of history to return.
     """
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
 
-    cutoff = datetime.utcnow() - timedelta(hours=hours)
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
 
     snapshots = db.query(EndpointSnapshot).filter(
         EndpointSnapshot.device_id == device_id,
@@ -329,7 +329,7 @@ def get_device_history(
 def get_device_connections(
     device_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user_totp_verified),
+    user: User = Depends(get_current_user),
 ):
     """Get external connections for a device with resolved hostnames.
 

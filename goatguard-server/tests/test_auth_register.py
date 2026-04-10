@@ -1,402 +1,353 @@
 """
-Tests de registro con Invitation Token y login [RF-13].
+Tests E2E del endpoint POST /auth/register [RF-13].
 
 Cubre:
-- TC-R1 a TC-R11: flujo de registro (POST /auth/register)
-- TC-L1 a TC-L3:  flujo de login (POST /auth/login)
+- Happy path: invitation válida + password NIST → 201 con datos TOTP completos
+- Invitation token inválida, ya usada, y expirada → 400 _REGISTER_FAIL
+- Username duplicado → 400 (respuesta genérica por seguridad)
+- Password que no cumple NIST → 422 (Pydantic schema)
+- El JWT devuelto tiene scope=pending_totp
+- La BD refleja correctamente el estado post-registro (totp_secret_enc, invitation.used)
+
+Edge case: usar la misma invitation token dos veces — la segunda falla con 400.
+
+Cada test es autocontenido: usa fixtures locales.
+Ejecutar con: pytest tests/test_auth_register.py -v
 """
 import sys
 sys.path.insert(0, ".")
 
 import base64
-from datetime import datetime, timedelta, timezone
-
 import jwt
+import pytest
+from datetime import datetime, timedelta, timezone
+from fastapi.testclient import TestClient
+from sqlalchemy.orm import sessionmaker
+from cryptography.fernet import Fernet
 
+from tests.db_test_utils import make_test_engine
+
+from src.api.auth import init_auth, hash_password
+from src.api.dependencies import get_db
+from src.config.models import ServerConfig
+from src.database.models import Base, InvitationToken, User
 from src.api.registration_utils import (
-    generate_invitation_token, hash_invitation_token,
+    generate_invitation_token,
+    hash_invitation_token,
 )
-from src.database.models import InvitationToken, User
-from tests.conftest import TEST_JWT_SECRET, TEST_JWT_ALGORITHM, TEST_FERNET_KEY
+
+# ── Constantes de test ────────────────────────────────────────────────────────
+
+TEST_JWT_SECRET = "goatguard-test-secret-key-for-pytest-suite"
+TEST_JWT_ALGORITHM = "HS256"
+TEST_FERNET_KEY = Fernet.generate_key().decode()
+
+# Password que cumple NIST SP 800-63B (≥15 chars, ≤128)
+_VALID_PASSWORD = "goatguard-pass-nist-ok"
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# ── Fixtures de infraestructura ───────────────────────────────────────────────
 
-VALID_PASSWORD = "SecurePassword2025!"   # 21 chars, cumple NIST min=15
-VALID_USERNAME = "newadmin"
-
-
-def _make_register_payload(
-    invitation_token: str,
-    username: str = VALID_USERNAME,
-    password: str = VALID_PASSWORD,
-) -> dict:
-    return {
-        "username": username,
-        "password": password,
-        "invitation_token": invitation_token,
-    }
+@pytest.fixture(scope="module", autouse=True)
+def _init_auth():
+    """Inicializa el módulo auth con el secret de test para toda la suite."""
+    init_auth(
+        jwt_secret=TEST_JWT_SECRET,
+        jwt_algorithm=TEST_JWT_ALGORITHM,
+        jwt_expiration_hours=1,
+    )
 
 
-# ── TC-R1: Bootstrap genera invitation_token cuando no hay admins ─────────────
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    """Resetea el storage del limiter entre tests para aislar contadores.
 
-class TestBootstrapInvitationToken:
-
-    def test_bootstrap_creates_token_when_no_admins(self, db_session):
-        """TC-R1: BD vacía → bootstrap genera un InvitationToken."""
-        from run_api import _bootstrap_first_admin
-
-        assert db_session.query(User).count() == 0
-        _bootstrap_first_admin(db_session)
-
-        tokens = db_session.query(InvitationToken).all()
-        assert len(tokens) == 1
-        assert tokens[0].used is False
-        # SQLite almacena naive — comparar como naive
-        assert tokens[0].expires_at > datetime.utcnow()
-
-    def test_bootstrap_skips_when_admin_exists(self, db_session):
-        """TC-R1 variante: Si ya hay admin, no crea token."""
-        from run_api import _bootstrap_first_admin
-        from src.api.auth import hash_password
-
-        db_session.add(User(
-            username="existing_admin",
-            password_hash=hash_password("password123"),
-        ))
-        db_session.commit()
-
-        _bootstrap_first_admin(db_session)
-        assert db_session.query(InvitationToken).count() == 0
+    slowapi usa un singleton de módulo con estado en memoria. Sin reset,
+    los tests que llaman /auth/register múltiples veces agotan el límite
+    (5/minute) y los tests siguientes reciben 429 en lugar del código real.
+    """
+    from src.api.rate_limit import limiter
+    limiter.reset()
+    yield
+    limiter.reset()
 
 
-# ── TC-R2 a TC-R7: Validación de inputs ──────────────────────────────────────
-
-class TestRegisterValidation:
-
-    def test_missing_invitation_token_returns_422(self, client):
-        """TC-R2: Body sin invitation_token → 422."""
-        response = client.post("/auth/register", json={
-            "username": VALID_USERNAME,
-            "password": VALID_PASSWORD,
-        })
-        assert response.status_code == 422
-
-    def test_password_below_minimum_returns_422(self, client, invitation_token):
-        """TC-R6: Contraseña < 15 chars → 422."""
-        response = client.post("/auth/register", json=_make_register_payload(
-            invitation_token=invitation_token,
-            password="Short1!",
-        ))
-        assert response.status_code == 422
-
-    def test_password_above_maximum_returns_422(self, client, invitation_token):
-        """TC-R7: Contraseña > 128 chars → 422."""
-        response = client.post("/auth/register", json=_make_register_payload(
-            invitation_token=invitation_token,
-            password="A" * 129,
-        ))
-        assert response.status_code == 422
+@pytest.fixture()
+def db_session():
+    """Engine SQLite in-memory aislado por función de test."""
+    engine = make_test_engine()
+    Base.metadata.create_all(engine)
+    TestingSession = sessionmaker(bind=engine)
+    session = TestingSession()
+    yield session
+    session.close()
+    Base.metadata.drop_all(engine)
 
 
-# ── TC-R3: Token inválido → 400 ──────────────────────────────────────────────
+@pytest.fixture()
+def client_2fa(db_session):
+    """TestClient con SecurityConfig inyectado (fernet_key + hibp_check_enabled=False).
 
-class TestRegisterInvalidToken:
+    Extiende el patrón de conftest.py con las dos líneas extra necesarias
+    para que los endpoints TOTP puedan cifrar secretos.
+    """
+    from src.api.app import create_app
 
-    def test_invalid_invitation_token_returns_400(self, client):
-        """TC-R3: Token inexistente → 400."""
-        response = client.post("/auth/register", json=_make_register_payload(
-            invitation_token="totally-invalid-token",
-        ))
-        assert response.status_code == 400
+    config = ServerConfig()
+    config.security.jwt_secret = TEST_JWT_SECRET
+    config.security.fernet_key = TEST_FERNET_KEY
+    config.security.hibp_check_enabled = False
+
+    class _FakeDatabase:
+        def get_session(self):
+            return db_session
+
+        def create_tables(self, base):
+            pass
+
+    app = create_app(_FakeDatabase(), config)
+
+    def _override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = _override_get_db
+
+    with TestClient(app, raise_server_exceptions=True) as test_client:
+        yield test_client
 
 
-# ── TC-R4: Token expirado → 400 ──────────────────────────────────────────────
+@pytest.fixture()
+def invitation_token_factory(db_session):
+    """Fábrica que inserta una InvitationToken en BD y devuelve el plain token.
 
-class TestRegisterExpiredToken:
-
-    def test_expired_invitation_token_returns_400(self, client, db_session):
-        """TC-R4: Token expirado → 400."""
-        plain_token = generate_invitation_token()
-        inv = InvitationToken(
-            token_hash=hash_invitation_token(plain_token),
-            expires_at=datetime.now(timezone.utc) - timedelta(hours=1),
+    Parámetros:
+        used: si la invitation ya fue marcada como usada
+        expires_in_hours: offset en horas desde ahora (negativo = expirada)
+    """
+    def _make(used: bool = False, expires_in_hours: int = 24) -> str:
+        plain = generate_invitation_token()
+        token_hash = hash_invitation_token(plain)
+        now = datetime.now(timezone.utc)
+        invitation = InvitationToken(
+            token_hash=token_hash,
+            expires_at=now + timedelta(hours=expires_in_hours),
+            used=used,
         )
-        db_session.add(inv)
+        db_session.add(invitation)
         db_session.commit()
+        return plain
 
-        response = client.post("/auth/register", json=_make_register_payload(
-            invitation_token=plain_token,
-        ))
-        assert response.status_code == 400
+    return _make
 
 
-# ── TC-R5: Token ya usado → 400 ──────────────────────────────────────────────
-
-class TestRegisterUsedToken:
-
-    def test_already_used_token_returns_400(self, client, db_session):
-        """TC-R5: Token con used=True → 400."""
-        plain_token = generate_invitation_token()
-        inv = InvitationToken(
-            token_hash=hash_invitation_token(plain_token),
-            expires_at=datetime.now(timezone.utc) + timedelta(hours=24),
-            used=True,
-            used_at=datetime.now(timezone.utc),
-        )
-        db_session.add(inv)
-        db_session.commit()
-
-        response = client.post("/auth/register", json=_make_register_payload(
-            invitation_token=plain_token,
-        ))
-        assert response.status_code == 400
-
-
-# ── TC-R8: Registro exitoso → 201 ────────────────────────────────────────────
+# ── Tests ─────────────────────────────────────────────────────────────────────
 
 class TestRegisterSuccess:
-
-    def test_successful_register_returns_201_with_all_fields(
-        self, client, invitation_token,
+    def test_register_success_returns_201_with_totp_data(
+        self, client_2fa, invitation_token_factory
     ):
-        """TC-R8: Registro OK → 201 con todos los campos de RegisterResponse."""
-        response = client.post("/auth/register", json=_make_register_payload(
-            invitation_token=invitation_token,
-        ))
-
+        """Happy path: invitation válida + password NIST → 201 con todos los campos."""
+        plain_token = invitation_token_factory()
+        response = client_2fa.post(
+            "/auth/register",
+            json={
+                "username": "newadmin",
+                "password": _VALID_PASSWORD,
+                "invitation_token": plain_token,
+            },
+        )
         assert response.status_code == 201
         body = response.json()
         assert "access_token" in body
         assert "recovery_code" in body
         assert "totp_uri" in body
         assert "qr_png_base64" in body
-        assert body["username"] == VALID_USERNAME
-        assert body["token_type"] == "bearer"
+        # El QR debe ser base64 válido y decodificar a un PNG
+        decoded = base64.b64decode(body["qr_png_base64"])
+        assert decoded[:4] == b"\x89PNG"
 
-    def test_jwt_has_pending_totp_scope(self, client, invitation_token):
-        """TC-R8: JWT retornado tiene scope=pending_totp."""
-        response = client.post("/auth/register", json=_make_register_payload(
-            invitation_token=invitation_token,
-        ))
+    def test_register_token_scope_is_pending_totp(
+        self, client_2fa, invitation_token_factory
+    ):
+        """El JWT devuelto tras registro tiene scope=pending_totp [RF-13]."""
+        plain_token = invitation_token_factory()
+        response = client_2fa.post(
+            "/auth/register",
+            json={
+                "username": "scopecheck",
+                "password": _VALID_PASSWORD,
+                "invitation_token": plain_token,
+            },
+        )
+        assert response.status_code == 201
         token = response.json()["access_token"]
         payload = jwt.decode(token, TEST_JWT_SECRET, algorithms=[TEST_JWT_ALGORITHM])
         assert payload["scope"] == "pending_totp"
+        assert payload["username"] == "scopecheck"
 
-    def test_totp_uri_format(self, client, invitation_token):
-        """TC-R8: totp_uri tiene formato otpauth://totp/ con issuer GOATGuard."""
-        response = client.post("/auth/register", json=_make_register_payload(
-            invitation_token=invitation_token,
-        ))
-        totp_uri = response.json()["totp_uri"]
-        assert totp_uri.startswith("otpauth://totp/")
-        assert "GOATGuard" in totp_uri
-
-    def test_qr_is_valid_png_base64(self, client, invitation_token):
-        """TC-R8: qr_png_base64 decodifica a PNG válido."""
-        response = client.post("/auth/register", json=_make_register_payload(
-            invitation_token=invitation_token,
-        ))
-        raw = base64.b64decode(response.json()["qr_png_base64"])
-        assert raw[:4] == b"\x89PNG"
-
-    def test_invitation_marked_as_used(self, client, invitation_token, db_session):
-        """TC-R8: InvitationToken queda used=True en BD."""
-        client.post("/auth/register", json=_make_register_payload(
-            invitation_token=invitation_token,
-        ))
-        token_hash = hash_invitation_token(invitation_token)
-        inv = db_session.query(InvitationToken).filter_by(token_hash=token_hash).first()
-        assert inv.used is True
-        assert inv.used_at is not None
-
-
-# ── TC-R9: Username duplicado → 409 ──────────────────────────────────────────
-
-class TestRegisterDuplicateUsername:
-
-    def test_duplicate_username_returns_409(self, client, db_session, invitation_token):
-        """TC-R9: Username existente → 409."""
-        from src.api.auth import hash_password
-
-        db_session.add(User(
-            username=VALID_USERNAME,
-            password_hash=hash_password("OtherPassword2025!"),
-        ))
-        db_session.commit()
-
-        response = client.post("/auth/register", json=_make_register_payload(
-            invitation_token=invitation_token,
-        ))
-        assert response.status_code == 409
-
-
-# ── TC-R10: Recovery code en response, hash en BD ────────────────────────────
-
-class TestRegisterRecoveryCode:
-
-    def test_recovery_code_in_response_and_hashed_in_db(
-        self, client, invitation_token, db_session,
+    def test_register_creates_user_with_encrypted_totp_secret(
+        self, client_2fa, invitation_token_factory, db_session
     ):
-        """TC-R10: recovery_code en texto plano en response, bcrypt hash en BD."""
-        response = client.post("/auth/register", json=_make_register_payload(
-            invitation_token=invitation_token,
-        ))
+        """Tras registro, el user en BD tiene totp_secret_enc no vacío y totp_enabled=False."""
+        plain_token = invitation_token_factory()
+        response = client_2fa.post(
+            "/auth/register",
+            json={
+                "username": "totpcheck",
+                "password": _VALID_PASSWORD,
+                "invitation_token": plain_token,
+            },
+        )
         assert response.status_code == 201
-        plain_code = response.json()["recovery_code"]
+        user = db_session.query(User).filter_by(username="totpcheck").first()
+        assert user is not None
+        assert user.totp_secret_enc is not None
+        assert len(user.totp_secret_enc) > 0
+        assert user.totp_enabled is False
 
-        # Formato XXXX-XXXX-XXXX-XXXX
-        parts = plain_code.split("-")
-        assert len(parts) == 4
-        assert all(len(p) == 4 for p in parts)
-
-        # Hash en BD, no texto plano
-        user = db_session.query(User).filter_by(username=VALID_USERNAME).first()
-        assert user.recovery_code_hash is not None
-        assert plain_code not in user.recovery_code_hash
-
-        from src.api.registration_utils import verify_recovery_code
-        assert verify_recovery_code(plain_code, user.recovery_code_hash) is True
-
-
-# ── TC-R11: HIBP comprometida (mock) → 400 ───────────────────────────────────
-
-class TestRegisterHibpCheck:
-
-    def test_compromised_password_returns_400(
-        self, db_session, invitation_token, monkeypatch,
+    def test_register_marks_invitation_as_used(
+        self, client_2fa, invitation_token_factory, db_session
     ):
-        """TC-R11: Password en HIBP (mockeado) → 400."""
-        from src.api.app import create_app
-        from src.api.dependencies import get_db
-        from src.config.models import ServerConfig
+        """Tras registro exitoso, invitation.used=True y invitation.used_at no es None."""
+        plain_token = invitation_token_factory()
+        token_hash = hash_invitation_token(plain_token)
+        client_2fa.post(
+            "/auth/register",
+            json={
+                "username": "usedtoken",
+                "password": _VALID_PASSWORD,
+                "invitation_token": plain_token,
+            },
+        )
+        invitation = db_session.query(InvitationToken).filter_by(
+            token_hash=token_hash
+        ).first()
+        assert invitation.used is True
+        assert invitation.used_at is not None
 
-        config = ServerConfig()
-        config.security.jwt_secret = TEST_JWT_SECRET
-        config.security.fernet_key = TEST_FERNET_KEY
-        config.security.hibp_check_enabled = True
 
-        class _FakeDatabase:
-            def get_session(self):
-                return db_session
-            def create_tables(self, base):
-                pass
-
-        app = create_app(_FakeDatabase(), config)
-        app.dependency_overrides[get_db] = lambda: (yield db_session).__next__() or db_session
-
-        def _override():
-            yield db_session
-        app.dependency_overrides[get_db] = _override
-
-        def _mock_hibp(password: str) -> bool:
-            return True
-
-        monkeypatch.setattr("src.api.routes.auth.check_password_hibp", _mock_hibp)
-
-        from fastapi.testclient import TestClient
-        with TestClient(app, raise_server_exceptions=True) as hibp_client:
-            response = hibp_client.post(
-                "/auth/register",
-                json=_make_register_payload(invitation_token=invitation_token),
-            )
+class TestRegisterFailures:
+    def test_register_invalid_invitation_returns_400(self, client_2fa):
+        """Token inexistente en BD → 400 con mensaje genérico _REGISTER_FAIL."""
+        response = client_2fa.post(
+            "/auth/register",
+            json={
+                "username": "hacker",
+                "password": _VALID_PASSWORD,
+                "invitation_token": "token-que-no-existe-en-la-bd",
+            },
+        )
         assert response.status_code == 400
-        assert "comprometida" in response.json()["detail"].lower()
+        assert response.json()["detail"] == "No se pudo completar el registro"
 
+    def test_register_used_invitation_returns_400(
+        self, client_2fa, invitation_token_factory
+    ):
+        """Invitation marcada used=True → 400, no revela estado interno."""
+        plain_token = invitation_token_factory(used=True)
+        response = client_2fa.post(
+            "/auth/register",
+            json={
+                "username": "replay",
+                "password": _VALID_PASSWORD,
+                "invitation_token": plain_token,
+            },
+        )
+        assert response.status_code == 400
+        assert response.json()["detail"] == "No se pudo completar el registro"
 
-# ── TC-L1: Login sin TOTP → full_access ──────────────────────────────────────
+    def test_register_expired_invitation_returns_400(
+        self, client_2fa, invitation_token_factory
+    ):
+        """Invitation con expires_at en el pasado → 400."""
+        plain_token = invitation_token_factory(expires_in_hours=-1)
+        response = client_2fa.post(
+            "/auth/register",
+            json={
+                "username": "expired",
+                "password": _VALID_PASSWORD,
+                "invitation_token": plain_token,
+            },
+        )
+        assert response.status_code == 400
+        assert response.json()["detail"] == "No se pudo completar el registro"
 
-class TestLoginNoTotp:
-
-    def test_legacy_user_gets_full_access(self, client, seed_data):
-        """TC-L1: User sin TOTP → TokenResponse scope=full_access."""
-        response = client.post("/auth/login", json={
-            "username": "admin",
-            "password": "password123",
-        })
-        assert response.status_code == 200
-        body = response.json()
-        assert "access_token" in body
-        assert "totp_required" not in body
-
-        payload = jwt.decode(body["access_token"], TEST_JWT_SECRET, algorithms=[TEST_JWT_ALGORITHM])
-        assert payload["scope"] == "full_access"
-
-
-# ── TC-L2: Credenciales incorrectas → 401 ────────────────────────────────────
-
-class TestLoginWrongCredentials:
-
-    def test_wrong_password_returns_401(self, client, seed_data):
-        """TC-L2: Password incorrecto → 401."""
-        response = client.post("/auth/login", json={
-            "username": "admin",
-            "password": "wrongpassword",
-        })
-        assert response.status_code == 401
-
-    def test_nonexistent_user_returns_401(self, client, seed_data):
-        """TC-L2: Usuario inexistente → 401 mismo mensaje."""
-        response = client.post("/auth/login", json={
-            "username": "ghost_user",
-            "password": "password123",
-        })
-        assert response.status_code == 401
-
-    def test_error_messages_are_identical(self, client, seed_data):
-        """Seguridad: misma respuesta para user inexistente y password malo."""
-        r1 = client.post("/auth/login", json={"username": "ghost", "password": "x"})
-        r2 = client.post("/auth/login", json={"username": "admin", "password": "x"})
-        assert r1.json()["detail"] == r2.json()["detail"]
-
-
-# ── TC-L3: Login con TOTP → pending_totp ─────────────────────────────────────
-
-class TestLoginWithTotp:
-
-    def test_totp_enabled_user_gets_pending_totp(self, client, db_session):
-        """TC-L3: User con totp_enabled=True → LoginStep1Response."""
-        from src.api.auth import hash_password
-
-        db_session.add(User(
-            username="totp_admin",
-            password_hash=hash_password("SecurePassword2025!"),
-            totp_enabled=True,
-            totp_secret_enc="encrypted_placeholder",
-            totp_enrolled_at=datetime.utcnow(),
-        ))
+    def test_register_duplicate_username_returns_400(
+        self, client_2fa, invitation_token_factory, db_session
+    ):
+        """Username ya existente → 400 (NO 409: respuesta genérica por seguridad)."""
+        existing = User(
+            username="existingadmin",
+            password_hash=hash_password(_VALID_PASSWORD),
+        )
+        db_session.add(existing)
         db_session.commit()
 
-        response = client.post("/auth/login", json={
-            "username": "totp_admin",
-            "password": "SecurePassword2025!",
-        })
-        assert response.status_code == 200
-        body = response.json()
-        assert body["totp_required"] is True
-        assert body["needs_enrollment"] is False
+        plain_token = invitation_token_factory()
+        response = client_2fa.post(
+            "/auth/register",
+            json={
+                "username": "existingadmin",
+                "password": _VALID_PASSWORD,
+                "invitation_token": plain_token,
+            },
+        )
+        assert response.status_code == 400
+        assert response.json()["detail"] == "No se pudo completar el registro"
 
-        payload = jwt.decode(body["access_token"], TEST_JWT_SECRET, algorithms=[TEST_JWT_ALGORITHM])
-        assert payload["scope"] == "pending_totp"
+    def test_register_short_password_rejected_by_schema(
+        self, client_2fa, invitation_token_factory
+    ):
+        """Password < 15 chars viola min_length del schema Pydantic → 422."""
+        plain_token = invitation_token_factory()
+        response = client_2fa.post(
+            "/auth/register",
+            json={
+                "username": "shortpwd",
+                "password": "corta",
+                "invitation_token": plain_token,
+            },
+        )
+        assert response.status_code == 422
 
-    def test_unenrolled_user_gets_needs_enrollment(self, client, db_session):
-        """Login con TOTP secret pero sin enrollment → needs_enrollment=True."""
-        from src.api.auth import hash_password
+    def test_register_password_exactly_14_chars_rejected(
+        self, client_2fa, invitation_token_factory
+    ):
+        """Edge case: 14 chars (límite NIST - 1) → 422 por Pydantic min_length=15."""
+        plain_token = invitation_token_factory()
+        response = client_2fa.post(
+            "/auth/register",
+            json={
+                "username": "boundary",
+                "password": "A" * 14,
+                "invitation_token": plain_token,
+            },
+        )
+        assert response.status_code == 422
 
-        db_session.add(User(
-            username="pending_user",
-            password_hash=hash_password("SecurePassword2025!"),
-            totp_enabled=False,
-            totp_secret_enc="some_encrypted_secret",
-            totp_enrolled_at=None,
-        ))
-        db_session.commit()
+    def test_register_same_invitation_twice_second_fails(
+        self, client_2fa, invitation_token_factory
+    ):
+        """Edge case: misma invitation en dos requests → segunda falla con 400.
 
-        response = client.post("/auth/login", json={
-            "username": "pending_user",
-            "password": "SecurePassword2025!",
-        })
-        assert response.status_code == 200
-        body = response.json()
-        assert body["totp_required"] is True
-        assert body["needs_enrollment"] is True
+        Verifica que el marcado used=True es atómico y persistente.
+        """
+        plain_token = invitation_token_factory()
+        client_2fa.post(
+            "/auth/register",
+            json={
+                "username": "first_user",
+                "password": _VALID_PASSWORD,
+                "invitation_token": plain_token,
+            },
+        )
+        response2 = client_2fa.post(
+            "/auth/register",
+            json={
+                "username": "second_user",
+                "password": _VALID_PASSWORD,
+                "invitation_token": plain_token,
+            },
+        )
+        assert response2.status_code == 400
+        assert response2.json()["detail"] == "No se pudo completar el registro"

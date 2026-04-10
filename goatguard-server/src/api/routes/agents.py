@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
 from typing import Optional, List
 
-from src.api.dependencies import get_db, get_current_user_totp_verified
+from src.api.dependencies import get_db, get_current_user
 from src.database.models import User, Agent
 
 logger = logging.getLogger(__name__)
@@ -50,7 +50,7 @@ def list_agents(
         description="Filter by agent status: active or inactive",
     ),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user_totp_verified),
+    user: User = Depends(get_current_user),
 ):
     """List all registered capture agents.
 
