@@ -29,7 +29,9 @@ void main() {
     await tester.pumpWidget(
       MultiProvider(
         providers: [
-          ChangeNotifierProvider(create: (_) => AuthProvider(api, FcmService(api))),
+          ChangeNotifierProvider(
+            create: (_) => AuthProvider(api, FcmService(api)),
+          ),
           ChangeNotifierProvider(create: (_) => DeviceProvider(api)),
           ChangeNotifierProvider(create: (_) => AlertProvider(api)),
           ChangeNotifierProvider(create: (_) => MetricsProvider(api, ws)),
