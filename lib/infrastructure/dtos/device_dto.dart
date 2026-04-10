@@ -26,30 +26,27 @@ class DeviceDto {
   });
 
   factory DeviceDto.fromJson(Map<String, dynamic> json) => DeviceDto(
-        id: json['id'],
-        alias: json['alias'] as String?,
-        hostname: json['hostname'] as String?,
-        ip: json['ip'] as String,
-        mac: json['mac'] as String,
-        deviceType: json['device_type'] as String?,
-        hasAgent: json['has_agent'] as bool?,
-        status: json['status'] as String?,
-        metrics: json['metrics'] as Map<String, dynamic>?,
-        alertCount: json['alert_count'] as int?,
-        lastSeen: json['last_seen'] as String?,
-      );
+    id: json['id'],
+    alias: json['alias'] as String?,
+    hostname: json['hostname'] as String?,
+    ip: json['ip'] as String,
+    mac: json['mac'] as String,
+    deviceType: json['device_type'] as String?,
+    hasAgent: json['has_agent'] as bool?,
+    status: json['status'] as String?,
+    metrics: json['metrics'] as Map<String, dynamic>?,
+    alertCount: json['alert_count'] as int?,
+    lastSeen: json['last_seen'] as String?,
+  );
 
   /// Factory for WebSocket payloads (flattened structure, no mac/device_type).
   factory DeviceDto.fromWsJson(Map<String, dynamic> json) => DeviceDto(
-        id: json['id'],
-        hostname: json['hostname'] as String?,
-        ip: json['ip'] as String,
-        mac: '',
-        hasAgent: json['has_agent'] as bool?,
-        status: json['status'] as String?,
-        metrics: {
-          'cpu_pct': json['cpu_pct'],
-          'ram_pct': json['ram_pct'],
-        },
-      );
+    id: json['id'],
+    hostname: json['hostname'] as String?,
+    ip: json['ip'] as String,
+    mac: '',
+    hasAgent: json['has_agent'] as bool?,
+    status: json['status'] as String?,
+    metrics: {'cpu_pct': json['cpu_pct'], 'ram_pct': json['ram_pct']},
+  );
 }

@@ -37,7 +37,5 @@ class RealTimeDeviceUpdate {
 class AlertCreatedEvent extends RealTimeEvent {
   final NetworkAlertEntity alert;
 
-  AlertCreatedEvent({
-    required this.alert,
-  });
+  AlertCreatedEvent({required this.alert});
 }

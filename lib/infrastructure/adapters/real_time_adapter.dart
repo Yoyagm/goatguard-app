@@ -34,24 +34,29 @@ class RealTimeAdapter implements RealTimePort {
       _controller.add(AlertCreatedEvent(alert: entity));
     } else if (type == 'state_update') {
       final net = msg['network'] as Map<String, dynamic>?;
-      final devs = (msg['devices'] as List<dynamic>?)
+      final devs =
+          (msg['devices'] as List<dynamic>?)
               ?.map((d) => d as Map<String, dynamic>)
-              .map((d) => RealTimeDeviceUpdate(
-                    id: d['id'].toString(),
-                    ip: d['ip'] as String?,
-                    status: d['status'] as String?,
-                    cpuPct: _d(d['cpu_pct']),
-                    ramPct: _d(d['ram_pct']),
-                  ))
+              .map(
+                (d) => RealTimeDeviceUpdate(
+                  id: d['id'].toString(),
+                  ip: d['ip'] as String?,
+                  status: d['status'] as String?,
+                  cpuPct: _d(d['cpu_pct']),
+                  ramPct: _d(d['ram_pct']),
+                ),
+              )
               .toList() ??
           [];
-      _controller.add(StateUpdateEvent(
-        ispLatencyAvg: _d(net?['isp_latency_avg']),
-        packetLossPct: _d(net?['packet_loss_pct']),
-        jitter: _d(net?['jitter']),
-        unseenAlerts: msg['unseen_alerts'] as int?,
-        devices: devs,
-      ));
+      _controller.add(
+        StateUpdateEvent(
+          ispLatencyAvg: _d(net?['isp_latency_avg']),
+          packetLossPct: _d(net?['packet_loss_pct']),
+          jitter: _d(net?['jitter']),
+          unseenAlerts: msg['unseen_alerts'] as int?,
+          devices: devs,
+        ),
+      );
     }
   }
 

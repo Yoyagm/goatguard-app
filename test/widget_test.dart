@@ -46,7 +46,8 @@ void main() {
               getDeviceDetailUseCase: container.getDeviceDetailUseCase,
               updateDeviceAliasUseCase: container.updateDeviceAliasUseCase,
               getDeviceHistoryUseCase: container.getDeviceHistoryUseCase,
-              getDeviceConnectionsUseCase: container.getDeviceConnectionsUseCase,
+              getDeviceConnectionsUseCase:
+                  container.getDeviceConnectionsUseCase,
             ),
           ),
           ChangeNotifierProvider(
@@ -62,8 +63,10 @@ void main() {
               getDashboardMetricsUseCase: container.getDashboardMetricsUseCase,
               getNetworkHistoryUseCase: container.getNetworkHistoryUseCase,
               getIspHealthUseCase: container.getIspHealthUseCase,
-              getTrafficDistributionUseCase: container.getTrafficDistributionUseCase,
-              getTopTalkersHistoryUseCase: container.getTopTalkersHistoryUseCase,
+              getTrafficDistributionUseCase:
+                  container.getTrafficDistributionUseCase,
+              getTopTalkersHistoryUseCase:
+                  container.getTopTalkersHistoryUseCase,
               getDashboardSummaryUseCase: container.getDashboardSummaryUseCase,
               getDeviceComparisonUseCase: container.getDeviceComparisonUseCase,
               networkRepository: container.networkRepository,

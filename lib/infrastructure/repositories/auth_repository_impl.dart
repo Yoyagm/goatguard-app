@@ -25,11 +25,13 @@ class AuthRepositoryImpl implements AuthRepository {
 
       await _storage.write('jwt_token', token);
 
-      return Success(LoginResult(
-        token: token,
-        totpRequired: totpRequired,
-        needsEnrollment: needsEnrollment,
-      ));
+      return Success(
+        LoginResult(
+          token: token,
+          totpRequired: totpRequired,
+          needsEnrollment: needsEnrollment,
+        ),
+      );
     } on ApiException catch (e) {
       if (e.isUnauthorized) return Err(UnauthorizedFailure());
       return Err(ServerFailure(message: e.message, statusCode: e.statusCode));

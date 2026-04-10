@@ -3,7 +3,12 @@ import 'dart:convert';
 import '../../failure.dart';
 import '../../ports/token_storage_port.dart';
 
-enum AuthStatus { authenticated, pendingTotp, pendingEnrollment, unauthenticated }
+enum AuthStatus {
+  authenticated,
+  pendingTotp,
+  pendingEnrollment,
+  unauthenticated,
+}
 
 class CheckAuthResult {
   final AuthStatus status;
@@ -42,10 +47,7 @@ class CheckAuthUseCase {
 
       if (scope == 'totp_required') {
         return Success(
-          CheckAuthResult(
-            status: AuthStatus.pendingTotp,
-            username: username,
-          ),
+          CheckAuthResult(status: AuthStatus.pendingTotp, username: username),
         );
       }
 
@@ -59,10 +61,7 @@ class CheckAuthUseCase {
       }
 
       return Success(
-        CheckAuthResult(
-          status: AuthStatus.authenticated,
-          username: username,
-        ),
+        CheckAuthResult(status: AuthStatus.authenticated, username: username),
       );
     } catch (e) {
       return Err(ServerFailure(message: e.toString()));

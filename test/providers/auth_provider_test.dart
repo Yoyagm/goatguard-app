@@ -117,8 +117,10 @@ AuthProvider _buildAuthProvider(_FakeApiService fakeApi) {
     loginUseCase: LoginUseCase(authRepository),
     checkAuthUseCase: CheckAuthUseCase(tokenStorage),
     completeTotpUseCase: CompleteTotpUseCase(authRepository, tokenStorage),
-    completeEnrollmentUseCase:
-        CompleteEnrollmentUseCase(authRepository, tokenStorage),
+    completeEnrollmentUseCase: CompleteEnrollmentUseCase(
+      authRepository,
+      tokenStorage,
+    ),
     logoutUseCase: LogoutUseCase(tokenStorage, pushAdapter),
     registerUseCase: RegisterUseCase(authRepository),
     authRepository: authRepository,
@@ -200,7 +202,8 @@ void main() {
         expect(
           provider.state,
           AuthState.pendingTotp,
-          reason: 'Token totp_required debe llevar a pendingTotp sin llamar API',
+          reason:
+              'Token totp_required debe llevar a pendingTotp sin llamar API',
         );
       },
     );
@@ -754,8 +757,7 @@ void main() {
         expect(
           provider.state,
           AuthState.authenticated,
-          reason:
-              'Sin scope claim = sin restricción TOTP → authenticated',
+          reason: 'Sin scope claim = sin restricción TOTP → authenticated',
         );
       },
     );

@@ -62,16 +62,16 @@ class MetricsProvider extends ChangeNotifier {
     required NetworkRepository networkRepository,
     required RealTimePort realTimePort,
     required ApiService apiService,
-  })  : _getDashboardMetricsUseCase = getDashboardMetricsUseCase,
-        _getNetworkHistoryUseCase = getNetworkHistoryUseCase,
-        _getIspHealthUseCase = getIspHealthUseCase,
-        _getTrafficDistributionUseCase = getTrafficDistributionUseCase,
-        _getTopTalkersHistoryUseCase = getTopTalkersHistoryUseCase,
-        _getDashboardSummaryUseCase = getDashboardSummaryUseCase,
-        _getDeviceComparisonUseCase = getDeviceComparisonUseCase,
-        _networkRepository = networkRepository,
-        _realTimePort = realTimePort,
-        _api = apiService;
+  }) : _getDashboardMetricsUseCase = getDashboardMetricsUseCase,
+       _getNetworkHistoryUseCase = getNetworkHistoryUseCase,
+       _getIspHealthUseCase = getIspHealthUseCase,
+       _getTrafficDistributionUseCase = getTrafficDistributionUseCase,
+       _getTopTalkersHistoryUseCase = getTopTalkersHistoryUseCase,
+       _getDashboardSummaryUseCase = getDashboardSummaryUseCase,
+       _getDeviceComparisonUseCase = getDeviceComparisonUseCase,
+       _networkRepository = networkRepository,
+       _realTimePort = realTimePort,
+       _api = apiService;
 
   NetworkMetricsEntity? get metrics => _metrics;
   List<TopConsumerEntity> get topConsumers => _topConsumers;
@@ -213,11 +213,11 @@ class MetricsProvider extends ChangeNotifier {
         _wsAlertController.add(alert);
 
       case StateUpdateEvent(
-            :final ispLatencyAvg,
-            :final packetLossPct,
-            :final jitter,
-            :final unseenAlerts,
-          ):
+        :final ispLatencyAvg,
+        :final packetLossPct,
+        :final jitter,
+        :final unseenAlerts,
+      ):
         if (_metrics != null) {
           _metrics = _metrics!.copyWith(
             ispLatencyMs: ispLatencyAvg ?? _metrics!.ispLatencyMs,

@@ -128,8 +128,10 @@ class InjectionContainer {
     loginUseCase = LoginUseCase(authRepository);
     checkAuthUseCase = CheckAuthUseCase(tokenStorage);
     completeTotpUseCase = CompleteTotpUseCase(authRepository, tokenStorage);
-    completeEnrollmentUseCase =
-        CompleteEnrollmentUseCase(authRepository, tokenStorage);
+    completeEnrollmentUseCase = CompleteEnrollmentUseCase(
+      authRepository,
+      tokenStorage,
+    );
     logoutUseCase = LogoutUseCase(tokenStorage, pushNotificationPort);
     registerUseCase = RegisterUseCase(authRepository);
 
@@ -137,8 +139,7 @@ class InjectionContainer {
     getDeviceDetailUseCase = GetDeviceDetailUseCase(deviceRepository);
     updateDeviceAliasUseCase = UpdateDeviceAliasUseCase(deviceRepository);
     getDeviceHistoryUseCase = GetDeviceHistoryUseCase(deviceRepository);
-    getDeviceConnectionsUseCase =
-        GetDeviceConnectionsUseCase(deviceRepository);
+    getDeviceConnectionsUseCase = GetDeviceConnectionsUseCase(deviceRepository);
     getDeviceComparisonUseCase = GetDeviceComparisonUseCase(deviceRepository);
 
     getAgentsUseCase = GetAgentsUseCase(agentRepository);
@@ -154,10 +155,12 @@ class InjectionContainer {
     );
     getNetworkHistoryUseCase = GetNetworkHistoryUseCase(networkRepository);
     getIspHealthUseCase = GetIspHealthUseCase(networkRepository);
-    getTrafficDistributionUseCase =
-        GetTrafficDistributionUseCase(networkRepository);
-    getTopTalkersHistoryUseCase =
-        GetTopTalkersHistoryUseCase(networkRepository);
+    getTrafficDistributionUseCase = GetTrafficDistributionUseCase(
+      networkRepository,
+    );
+    getTopTalkersHistoryUseCase = GetTopTalkersHistoryUseCase(
+      networkRepository,
+    );
     getDashboardSummaryUseCase = GetDashboardSummaryUseCase(networkRepository);
   }
 }

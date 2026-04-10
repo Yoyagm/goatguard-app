@@ -1,7 +1,4 @@
-enum AgentStatus {
-  active,
-  inactive,
-}
+enum AgentStatus { active, inactive }
 
 class AgentEntity {
   final String id;

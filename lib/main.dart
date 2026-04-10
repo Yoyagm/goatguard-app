@@ -86,8 +86,10 @@ void main() async {
   final loginUseCase = LoginUseCase(authRepository);
   final checkAuthUseCase = CheckAuthUseCase(tokenStorage);
   final completeTotpUseCase = CompleteTotpUseCase(authRepository, tokenStorage);
-  final completeEnrollmentUseCase =
-      CompleteEnrollmentUseCase(authRepository, tokenStorage);
+  final completeEnrollmentUseCase = CompleteEnrollmentUseCase(
+    authRepository,
+    tokenStorage,
+  );
   final logoutUseCase = LogoutUseCase(tokenStorage, pushNotificationPort);
   final registerUseCase = RegisterUseCase(authRepository);
 
@@ -95,10 +97,12 @@ void main() async {
   final getDeviceDetailUseCase = GetDeviceDetailUseCase(deviceRepository);
   final updateDeviceAliasUseCase = UpdateDeviceAliasUseCase(deviceRepository);
   final getDeviceHistoryUseCase = GetDeviceHistoryUseCase(deviceRepository);
-  final getDeviceConnectionsUseCase =
-      GetDeviceConnectionsUseCase(deviceRepository);
-  final getDeviceComparisonUseCase =
-      GetDeviceComparisonUseCase(deviceRepository);
+  final getDeviceConnectionsUseCase = GetDeviceConnectionsUseCase(
+    deviceRepository,
+  );
+  final getDeviceComparisonUseCase = GetDeviceComparisonUseCase(
+    deviceRepository,
+  );
   final getAgentsUseCase = GetAgentsUseCase(agentRepository);
 
   final getAlertsUseCase = GetAlertsUseCase(alertRepository);
@@ -113,12 +117,15 @@ void main() async {
   );
   final getNetworkHistoryUseCase = GetNetworkHistoryUseCase(networkRepository);
   final getIspHealthUseCase = GetIspHealthUseCase(networkRepository);
-  final getTrafficDistributionUseCase =
-      GetTrafficDistributionUseCase(networkRepository);
-  final getTopTalkersHistoryUseCase =
-      GetTopTalkersHistoryUseCase(networkRepository);
-  final getDashboardSummaryUseCase =
-      GetDashboardSummaryUseCase(networkRepository);
+  final getTrafficDistributionUseCase = GetTrafficDistributionUseCase(
+    networkRepository,
+  );
+  final getTopTalkersHistoryUseCase = GetTopTalkersHistoryUseCase(
+    networkRepository,
+  );
+  final getDashboardSummaryUseCase = GetDashboardSummaryUseCase(
+    networkRepository,
+  );
 
   runApp(
     MultiProvider(

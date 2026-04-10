@@ -35,12 +35,12 @@ class DeviceProvider extends ChangeNotifier {
     required UpdateDeviceAliasUseCase updateDeviceAliasUseCase,
     required GetDeviceHistoryUseCase getDeviceHistoryUseCase,
     required GetDeviceConnectionsUseCase getDeviceConnectionsUseCase,
-  })  : _getDevicesUseCase = getDevicesUseCase,
-        _getAgentsUseCase = getAgentsUseCase,
-        _getDeviceDetailUseCase = getDeviceDetailUseCase,
-        _updateDeviceAliasUseCase = updateDeviceAliasUseCase,
-        _getDeviceHistoryUseCase = getDeviceHistoryUseCase,
-        _getDeviceConnectionsUseCase = getDeviceConnectionsUseCase;
+  }) : _getDevicesUseCase = getDevicesUseCase,
+       _getAgentsUseCase = getAgentsUseCase,
+       _getDeviceDetailUseCase = getDeviceDetailUseCase,
+       _updateDeviceAliasUseCase = updateDeviceAliasUseCase,
+       _getDeviceHistoryUseCase = getDeviceHistoryUseCase,
+       _getDeviceConnectionsUseCase = getDeviceConnectionsUseCase;
 
   List<DeviceEntity> get devices => _devices;
   List<AgentEntity> get agents => _agents;
