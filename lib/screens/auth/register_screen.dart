@@ -3,7 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../config/theme.dart';
-import '../../services/api_service.dart';
+import '../../core/failure.dart';
+import '../../providers/auth_provider.dart';
 
 /// Pantalla de registro con invitation token [RF-16].
 /// 3 campos: username, password, invitation token.
@@ -37,15 +38,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   Future<void> _checkBootstrap() async {
-    try {
-      final data = await context.read<ApiService>().checkBootstrapStatus();
-      if (!mounted) return;
-      setState(() {
-        _isBootstrap = data['needs_bootstrap'] == true;
-      });
-    } on ApiException {
-      // Si falla el check, asumir modo normal (requiere invitation)
-      if (!mounted) return;
+    final result =
+        await context.read<AuthProvider>().checkBootstrapStatus();
+    if (!mounted) return;
+    switch (result) {
+      case Success(:final data):
+        setState(() {
+          _isBootstrap = data['needs_bootstrap'] == true;
+        });
+      case Err():
+        // Si falla el check, asumir modo normal (requiere invitation)
+        break;
     }
   }
 
@@ -56,33 +59,34 @@ class _RegisterScreenState extends State<RegisterScreen> {
       _enrollmentData = null;
     });
 
-    try {
-      final token = _isBootstrap ? null : _invitationController.text.trim();
-      final data = await context.read<ApiService>().register(
-        _usernameController.text.trim(),
-        _passwordController.text,
-        invitationToken: token,
-      );
+    final token = _isBootstrap ? null : _invitationController.text.trim();
+    final result = await context.read<AuthProvider>().register(
+      _usernameController.text.trim(),
+      _passwordController.text,
+      invitationToken: token,
+    );
 
-      if (!mounted) return;
-      // Limpiar password del controller lo antes posible
-      _passwordController.clear();
-      setState(() {
-        _isLoading = false;
-        _enrollmentData = data;
-      });
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: AppColors.critical,
-          content: Text(
-            e.message,
-            style: GoogleFonts.inter(color: Colors.white),
+    if (!mounted) return;
+
+    switch (result) {
+      case Success(:final data):
+        // Limpiar password del controller lo antes posible
+        _passwordController.clear();
+        setState(() {
+          _isLoading = false;
+          _enrollmentData = data;
+        });
+      case Err(:final failure):
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: AppColors.critical,
+            content: Text(
+              failure.message,
+              style: GoogleFonts.inter(color: Colors.white),
+            ),
           ),
-        ),
-      );
+        );
     }
   }
 

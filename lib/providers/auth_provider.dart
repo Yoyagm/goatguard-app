@@ -1,11 +1,16 @@
-import 'dart:convert';
-
 import 'package:flutter/foundation.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import '../services/api_service.dart';
-import '../services/fcm_service.dart';
+import '../core/failure.dart';
+import '../core/use_cases/auth/login_use_case.dart';
+import '../core/use_cases/auth/check_auth_use_case.dart';
+import '../core/use_cases/auth/complete_totp_use_case.dart';
+import '../core/use_cases/auth/complete_enrollment_use_case.dart';
+import '../core/use_cases/auth/logout_use_case.dart';
+import '../core/use_cases/auth/register_use_case.dart';
+import '../core/ports/auth_repository.dart';
+import '../core/ports/push_notification_port.dart';
+import '../core/ports/token_storage_port.dart';
 
-/// Estado de autenticación con soporte 2FA TOTP [RF-13, RF-16]
+/// Estado de autenticacion con soporte 2FA TOTP [RF-13, RF-16]
 enum AuthState {
   unknown,
   unauthenticated,
@@ -15,20 +20,44 @@ enum AuthState {
 }
 
 class AuthProvider extends ChangeNotifier {
-  final ApiService _api;
-  final FcmService _fcm;
-  final FlutterSecureStorage _storage = const FlutterSecureStorage();
+  final LoginUseCase _loginUseCase;
+  final CheckAuthUseCase _checkAuthUseCase;
+  final CompleteTotpUseCase _completeTotpUseCase;
+  final CompleteEnrollmentUseCase _completeEnrollmentUseCase;
+  final LogoutUseCase _logoutUseCase;
+  final RegisterUseCase _registerUseCase;
+  final AuthRepository _authRepository;
+  final PushNotificationPort _pushNotificationPort;
+  final TokenStoragePort _tokenStorage;
 
   AuthState _state = AuthState.unknown;
   String? _username;
   String? _error;
   List<String>? _backupCodes;
 
-  AuthProvider(this._api, this._fcm) {
-    _api.onUnauthorized = () {
+  AuthProvider({
+    required LoginUseCase loginUseCase,
+    required CheckAuthUseCase checkAuthUseCase,
+    required CompleteTotpUseCase completeTotpUseCase,
+    required CompleteEnrollmentUseCase completeEnrollmentUseCase,
+    required LogoutUseCase logoutUseCase,
+    required RegisterUseCase registerUseCase,
+    required AuthRepository authRepository,
+    required PushNotificationPort pushNotificationPort,
+    required TokenStoragePort tokenStorage,
+  })  : _loginUseCase = loginUseCase,
+        _checkAuthUseCase = checkAuthUseCase,
+        _completeTotpUseCase = completeTotpUseCase,
+        _completeEnrollmentUseCase = completeEnrollmentUseCase,
+        _logoutUseCase = logoutUseCase,
+        _registerUseCase = registerUseCase,
+        _authRepository = authRepository,
+        _pushNotificationPort = pushNotificationPort,
+        _tokenStorage = tokenStorage {
+    _authRepository.onUnauthorized = () {
       _state = AuthState.unauthenticated;
       _backupCodes = null;
-      _storage.delete(key: 'jwt_token');
+      _tokenStorage.delete('jwt_token');
       notifyListeners();
     };
   }
@@ -38,81 +67,39 @@ class AuthProvider extends ChangeNotifier {
   String? get error => _error;
   bool get isAuthenticated => _state == AuthState.authenticated;
   List<String>? get backupCodes => _backupCodes;
-  FcmService get fcmService => _fcm;
 
-  /// Limpia backup codes de memoria tras confirmar que el usuario los guardó.
+  /// Expose push notification port for screen callbacks (FCM wiring).
+  /// Replaces the old `fcmService` getter — same usage from screens.
+  PushNotificationPort get fcmService => _pushNotificationPort;
+
+  /// Limpia backup codes de memoria tras confirmar que el usuario los guardo.
   void clearBackupCodes() {
     _backupCodes = null;
   }
 
-  // ── JWT decode local (sin verificar firma) ──────────────────────────────
+  // -- Restaurar sesion -------------------------------------------------------
 
-  /// Decodifica el payload del JWT leyendo solo el segmento base64.
-  /// No verifica firma — solo extrae claims (scope, exp) para decidir
-  /// estado local. La firma se valida server-side en cada request.
-  Map<String, dynamic>? _decodeJwtPayload(String token) {
-    try {
-      final parts = token.split('.');
-      if (parts.length != 3) return null;
-      final normalized = base64Url.normalize(parts[1]);
-      final decoded = utf8.decode(base64Url.decode(normalized));
-      return jsonDecode(decoded) as Map<String, dynamic>;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  /// Valida exp contra reloj local. Retorna true si el token ya expiró.
-  bool _isTokenExpired(Map<String, dynamic> payload) {
-    final exp = payload['exp'];
-    if (exp == null) return true;
-    final expSeconds = (exp is int) ? exp : (exp as num).toInt();
-    if (expSeconds <= 0) return true;
-    final expDate = DateTime.fromMillisecondsSinceEpoch(expSeconds * 1000);
-    return DateTime.now().isAfter(expDate);
-  }
-
-  // ── Restaurar sesión ────────────────────────────────────────────────────
-
-  /// Restaura sesión al abrir la app [RF-16].
-  /// Lee el JWT del storage, decodifica scope/exp sin llamar al server.
-  /// Transiciona a: authenticated (full_access), pendingTotp (pending_totp),
-  /// o unauthenticated (sin token, expirado, malformado, sin scope).
+  /// Restaura sesion al abrir la app [RF-16].
+  /// Delega decodificacion JWT + validacion exp/scope al CheckAuthUseCase.
   Future<void> checkAuth() async {
-    final token = await _storage.read(key: 'jwt_token');
-    if (token == null) {
-      _state = AuthState.unauthenticated;
-      notifyListeners();
-      return;
-    }
+    final result = await _checkAuthUseCase.call();
 
-    final payload = _decodeJwtPayload(token);
-    if (payload == null) {
-      await _storage.delete(key: 'jwt_token');
-      _state = AuthState.unauthenticated;
-      notifyListeners();
-      return;
-    }
-
-    if (_isTokenExpired(payload)) {
-      await _storage.delete(key: 'jwt_token');
-      _state = AuthState.unauthenticated;
-      notifyListeners();
-      return;
-    }
-
-    final scope = payload['scope'] as String?;
-    _username = await _storage.read(key: 'username');
-
-    switch (scope) {
-      case 'full_access':
-        _state = AuthState.authenticated;
-        await _initializeFcm();
-      case 'pending_totp':
-        _state = AuthState.pendingTotp;
-      default:
-        // Scope desconocido o ausente — sesión inválida
-        await _storage.delete(key: 'jwt_token');
+    switch (result) {
+      case Success(:final data):
+        _username = data.username;
+        switch (data.status) {
+          case AuthStatus.authenticated:
+            _state = AuthState.authenticated;
+            await _initializeFcm();
+          case AuthStatus.pendingTotp:
+            _state = AuthState.pendingTotp;
+          case AuthStatus.pendingEnrollment:
+            _state = AuthState.pendingEnrollment;
+          case AuthStatus.unauthenticated:
+            _state = AuthState.unauthenticated;
+        }
+      case Err(:final failure):
+        debugPrint('checkAuth failed: ${failure.message}');
         _state = AuthState.unauthenticated;
     }
     notifyListeners();
@@ -121,54 +108,55 @@ class AuthProvider extends ChangeNotifier {
   /// Alias para compatibilidad con splash_screen existente.
   Future<void> checkStoredToken() => checkAuth();
 
-  // ── Login ───────────────────────────────────────────────────────────────
+  // -- Login ------------------------------------------------------------------
 
   Future<bool> login(String username, String password) async {
     _error = null;
-    try {
-      final data = await _api.login(username, password);
-      final token = data['access_token'] as String;
-      await _storage.write(key: 'jwt_token', value: token);
-      await _storage.write(key: 'username', value: username);
-      _username = username;
+    final result = await _loginUseCase.call(username, password);
 
-      // Inspeccionar respuesta 2FA del server
-      final totpRequired = data['totp_required'] as bool? ?? false;
-      final needsEnrollment = data['needs_enrollment'] as bool? ?? false;
+    switch (result) {
+      case Success(:final data):
+        await _tokenStorage.write('jwt_token', data.token);
+        await _tokenStorage.write('username', username);
+        _username = username;
 
-      if (totpRequired && needsEnrollment) {
-        _state = AuthState.pendingEnrollment;
-      } else if (totpRequired) {
-        _state = AuthState.pendingTotp;
-      } else {
-        _state = AuthState.authenticated;
-      }
-      notifyListeners();
-      return true;
-    } on ApiException catch (e) {
-      _error = e.statusCode == 401 ? 'Credenciales inválidas' : e.message;
-      _state = AuthState.unauthenticated;
-      notifyListeners();
-      return false;
+        if (data.totpRequired && data.needsEnrollment) {
+          _state = AuthState.pendingEnrollment;
+        } else if (data.totpRequired) {
+          _state = AuthState.pendingTotp;
+        } else {
+          _state = AuthState.authenticated;
+        }
+        notifyListeners();
+        return true;
+
+      case Err(:final failure):
+        _error = failure.statusCode == 401
+            ? 'Credenciales invalidas'
+            : failure.message;
+        _state = AuthState.unauthenticated;
+        notifyListeners();
+        return false;
     }
   }
 
-  // ── TOTP 2FA [RF-16] ───────────────────────────────────────────────────
+  // -- TOTP 2FA [RF-16] ------------------------------------------------------
 
-  /// Paso 2 del login: verificar código TOTP.
+  /// Paso 2 del login: verificar codigo TOTP.
   /// No-op si el estado no es pendingTotp.
   Future<void> completeTotp(String code) async {
     if (_state != AuthState.pendingTotp) return;
     _error = null;
-    try {
-      final data = await _api.totpVerify(code);
-      final token = data['access_token'] as String;
-      await _storage.write(key: 'jwt_token', value: token);
-      _state = AuthState.authenticated;
-      notifyListeners();
-    } on ApiException catch (e) {
-      _error = e.message;
-      notifyListeners();
+
+    final result = await _completeTotpUseCase.call(code);
+
+    switch (result) {
+      case Success():
+        _state = AuthState.authenticated;
+        notifyListeners();
+      case Err(:final failure):
+        _error = failure.message;
+        notifyListeners();
     }
   }
 
@@ -178,46 +166,85 @@ class AuthProvider extends ChangeNotifier {
   Future<void> completeEnrollment(String code) async {
     if (_state != AuthState.pendingEnrollment) return;
     _error = null;
-    try {
-      final data = await _api.totpEnrollVerify(code);
-      final codes = (data['backup_codes'] as List?)?.cast<String>();
-      _backupCodes = codes;
-      // Guardar access_token si el server lo incluye en la respuesta
-      final token = data['access_token'] as String?;
-      if (token != null) {
-        await _storage.write(key: 'jwt_token', value: token);
-      }
-      _state = AuthState.authenticated;
-      notifyListeners();
-    } on ApiException catch (e) {
-      _error = e.message;
-      notifyListeners();
+
+    final result = await _completeEnrollmentUseCase.call(code);
+
+    switch (result) {
+      case Success(:final data):
+        _backupCodes = data;
+        _state = AuthState.authenticated;
+        notifyListeners();
+      case Err(:final failure):
+        _error = failure.message;
+        notifyListeners();
     }
   }
 
-  // ── Logout ──────────────────────────────────────────────────────────────
+  // -- Logout -----------------------------------------------------------------
 
   Future<void> logout() async {
-    await _fcm.unregisterToken();
-    await _storage.delete(key: 'jwt_token');
-    await _storage.delete(key: 'username');
+    await _logoutUseCase.call();
     _username = null;
     _backupCodes = null;
     _state = AuthState.unauthenticated;
     notifyListeners();
   }
 
-  // ── FCM ─────────────────────────────────────────────────────────────────
+  // -- FCM / Push Notifications -----------------------------------------------
 
   Future<void> _initializeFcm() async {
     try {
-      await _fcm.initialize();
-      await _fcm.registerToken();
+      await _pushNotificationPort.initialize();
+      await _pushNotificationPort.registerToken();
     } catch (e) {
       debugPrint('FCM initialization failed: $e');
     }
   }
 
   /// Token actual para WebSocket
-  Future<String?> getToken() => _storage.read(key: 'jwt_token');
+  Future<String?> getToken() => _tokenStorage.read('jwt_token');
+
+  // -- Delegated methods (screens call these instead of ApiService) -----------
+
+  /// Verifica si el sistema necesita bootstrap (0 usuarios en BD).
+  Future<Result<Map<String, dynamic>>> checkBootstrapStatus() {
+    return _authRepository.checkBootstrapStatus();
+  }
+
+  /// Registrar nuevo usuario.
+  Future<Result<Map<String, dynamic>>> register(
+    String username,
+    String password, {
+    String? invitationToken,
+  }) {
+    return _registerUseCase.call(
+      username,
+      password,
+      invitationToken: invitationToken,
+    );
+  }
+
+  /// Genera un invitation token (requiere scope=full_access).
+  Future<Result<Map<String, dynamic>>> createInvitation() {
+    return _authRepository.createInvitation();
+  }
+
+  /// Verifica recovery code para iniciar reset de password.
+  Future<Result<Map<String, dynamic>>> recoveryVerifyCode(
+    String username,
+    String recoveryCode,
+  ) {
+    return _authRepository.recoveryVerifyCode(username, recoveryCode);
+  }
+
+  /// Cambia password usando reset_token.
+  Future<Result<void>> recoveryResetPassword(
+    String newPassword, {
+    required String resetToken,
+  }) {
+    return _authRepository.recoveryResetPassword(
+      newPassword,
+      resetToken: resetToken,
+    );
+  }
 }

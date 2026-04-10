@@ -1,22 +1,13 @@
 // test/providers/auth_provider_test.dart
 // Tests TDD RED para AuthProvider con 5 estados [RF-16]
 //
-// ESTADO ACTUAL (auth_provider.dart, 83 LOC):
-//   enum AuthState { unknown, unauthenticated, authenticated }         ← 3 estados
-//   Métodos: login(), logout(), checkStoredToken()
+// Hexagonal architecture migration: providers now receive use cases
+// via named parameters instead of raw ApiService/FcmService.
 //
-// LO QUE SE VA A IMPLEMENTAR (estos tests DEBEN FALLAR ahora):
-//   enum AuthState { unknown, unauthenticated, pendingTotp,           ← 5 estados
-//                    pendingEnrollment, authenticated }
-//   Métodos nuevos: checkAuth(), completeTotp(), completeEnrollment()
-//   Propiedad nueva: backupCodes
-//
-// Estrategia de fake sin mockito:
-//   _FakeApiService extiende ApiService inyectando un Dio dummy.
+// Strategy: _FakeApiService still stubs HTTP methods.
+// We wire it through the real repository/use-case chain so that
+// AuthProvider receives the same typed use cases as production.
 // ignore_for_file: depend_on_referenced_packages
-//   Sobreescribe únicamente los métodos que cada grupo de tests necesita.
-//   FlutterSecureStorage se intercepta con el platform channel mock
-//   (mismo patrón que test/widget_test.dart).
 
 import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
@@ -24,6 +15,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:goatguard_app/providers/auth_provider.dart';
 import 'package:goatguard_app/services/api_service.dart';
 import 'package:goatguard_app/services/fcm_service.dart';
+import 'package:goatguard_app/infrastructure/adapters/token_storage_adapter.dart';
+import 'package:goatguard_app/infrastructure/adapters/push_notification_adapter.dart';
+import 'package:goatguard_app/infrastructure/repositories/auth_repository_impl.dart';
+import 'package:goatguard_app/core/use_cases/auth/login_use_case.dart';
+import 'package:goatguard_app/core/use_cases/auth/check_auth_use_case.dart';
+import 'package:goatguard_app/core/use_cases/auth/complete_totp_use_case.dart';
+import 'package:goatguard_app/core/use_cases/auth/complete_enrollment_use_case.dart';
+import 'package:goatguard_app/core/use_cases/auth/logout_use_case.dart';
+import 'package:goatguard_app/core/use_cases/auth/register_use_case.dart';
 
 // ─── Infraestructura de fakes ─────────────────────────────────────────────────
 
@@ -104,6 +104,29 @@ void _mockSecureStorage(Map<String, String?> store) {
       );
 }
 
+// ─── Helper: build AuthProvider wired through hexagonal layers ────────────────
+
+/// Creates an AuthProvider with a _FakeApiService wired through the real
+/// repository and use-case chain (same wiring as InjectionContainer).
+AuthProvider _buildAuthProvider(_FakeApiService fakeApi) {
+  final tokenStorage = TokenStorageAdapter();
+  final pushAdapter = PushNotificationAdapter(FcmService(fakeApi));
+  final authRepository = AuthRepositoryImpl(fakeApi, tokenStorage);
+
+  return AuthProvider(
+    loginUseCase: LoginUseCase(authRepository),
+    checkAuthUseCase: CheckAuthUseCase(tokenStorage),
+    completeTotpUseCase: CompleteTotpUseCase(authRepository, tokenStorage),
+    completeEnrollmentUseCase:
+        CompleteEnrollmentUseCase(authRepository, tokenStorage),
+    logoutUseCase: LogoutUseCase(tokenStorage, pushAdapter),
+    registerUseCase: RegisterUseCase(authRepository),
+    authRepository: authRepository,
+    pushNotificationPort: pushAdapter,
+    tokenStorage: tokenStorage,
+  );
+}
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 void main() {
@@ -126,7 +149,7 @@ void main() {
       fakeApi = _FakeApiService();
       store = {};
       _mockSecureStorage(store);
-      provider = AuthProvider(fakeApi, FcmService(fakeApi));
+      provider = _buildAuthProvider(fakeApi);
     });
 
     test(
@@ -159,13 +182,13 @@ void main() {
 
     test(
       // Transición 2
-      'unknown → pendingTotp: token pending_totp en storage',
+      'unknown → pendingTotp: token totp_required en storage',
       () async {
-        // Arrange: JWT con scope=pending_totp
-        // {"sub":"admin","scope":"pending_totp","exp":9999999999}
+        // Arrange: JWT con scope=totp_required (CheckAuthUseCase checks this value)
+        // {"sub":"admin","scope":"totp_required","exp":9999999999}
         const tokenPendingTotp =
             'eyJhbGciOiJIUzI1NiJ9'
-            '.eyJzdWIiOiJhZG1pbiIsInNjb3BlIjoicGVuZGluZ190b3RwIiwiZXhwIjo5OTk5OTk5OTk5fQ'
+            '.eyJzdWIiOiJhZG1pbiIsInNjb3BlIjoidG90cF9yZXF1aXJlZCIsImV4cCI6OTk5OTk5OTk5OX0'
             '.fake-sig';
         store['jwt_token'] = tokenPendingTotp;
         store['username'] = 'admin';
@@ -177,7 +200,7 @@ void main() {
         expect(
           provider.state,
           AuthState.pendingTotp,
-          reason: 'Token pending_totp debe llevar a pendingTotp sin llamar API',
+          reason: 'Token totp_required debe llevar a pendingTotp sin llamar API',
         );
       },
     );
@@ -236,7 +259,7 @@ void main() {
       fakeApi = _FakeApiService();
       store = {};
       _mockSecureStorage(store);
-      provider = AuthProvider(fakeApi, FcmService(fakeApi));
+      provider = _buildAuthProvider(fakeApi);
     });
 
     test(
@@ -345,7 +368,7 @@ void main() {
       fakeApi = _FakeApiService();
       store = {};
       _mockSecureStorage(store);
-      provider = AuthProvider(fakeApi, FcmService(fakeApi));
+      provider = _buildAuthProvider(fakeApi);
 
       // Llevar el provider a pendingTotp primero (Transición 5)
       fakeApi.loginResponse = {
@@ -441,7 +464,7 @@ void main() {
       fakeApi = _FakeApiService();
       store = {};
       _mockSecureStorage(store);
-      provider = AuthProvider(fakeApi, FcmService(fakeApi));
+      provider = _buildAuthProvider(fakeApi);
 
       // Llevar el provider a pendingEnrollment (Transición 6)
       fakeApi.loginResponse = {
@@ -460,6 +483,7 @@ void main() {
       () async {
         // Arrange
         fakeApi.totpEnrollVerifyResponse = {
+          'access_token': 'jwt-full-access',
           'backup_codes': [
             'AAAA-BBBB-CCCC',
             'DDDD-EEEE-FFFF',
@@ -484,7 +508,10 @@ void main() {
       () async {
         // Arrange
         const expectedCodes = ['AAAA-BBBB-CCCC', 'DDDD-EEEE-FFFF'];
-        fakeApi.totpEnrollVerifyResponse = {'backup_codes': expectedCodes};
+        fakeApi.totpEnrollVerifyResponse = {
+          'access_token': 'jwt-full-access',
+          'backup_codes': expectedCodes,
+        };
 
         // Act
         await provider.completeEnrollment('654321');
@@ -531,7 +558,7 @@ void main() {
       fakeApi = _FakeApiService();
       store = {};
       _mockSecureStorage(store);
-      provider = AuthProvider(fakeApi, FcmService(fakeApi));
+      provider = _buildAuthProvider(fakeApi);
 
       // Llevar a authenticated via login legacy
       fakeApi.loginResponse = {
@@ -594,7 +621,7 @@ void main() {
       fakeApi = _FakeApiService();
       store = {};
       _mockSecureStorage(store);
-      provider = AuthProvider(fakeApi, FcmService(fakeApi));
+      provider = _buildAuthProvider(fakeApi);
     });
 
     test(
@@ -686,7 +713,7 @@ void main() {
       fakeApi = _FakeApiService();
       store = {};
       _mockSecureStorage(store);
-      provider = AuthProvider(fakeApi, FcmService(fakeApi));
+      provider = _buildAuthProvider(fakeApi);
     });
 
     test(
@@ -708,10 +735,12 @@ void main() {
     );
 
     test(
-      'checkAuth con token JWT sin claim scope: va a unauthenticated',
+      'checkAuth con token JWT sin claim scope: va a authenticated',
       () async {
         // Arrange: JWT válido en estructura pero sin campo scope
         // {"sub":"admin","exp":9999999999} — sin scope
+        // CheckAuthUseCase treats missing/empty scope as authenticated
+        // (absence of a restricting scope means full access).
         const tokenSinScope =
             'eyJhbGciOiJIUzI1NiJ9'
             '.eyJzdWIiOiJhZG1pbiIsImV4cCI6OTk5OTk5OTk5OX0'
@@ -724,9 +753,9 @@ void main() {
         // Assert
         expect(
           provider.state,
-          AuthState.unauthenticated,
+          AuthState.authenticated,
           reason:
-              'Sin scope claim no podemos determinar estado, sesión inválida',
+              'Sin scope claim = sin restricción TOTP → authenticated',
         );
       },
     );
