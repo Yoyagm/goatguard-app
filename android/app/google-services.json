@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "617920868765",
+    "project_id": "goatguard-779bb",
+    "storage_bucket": "goatguard-779bb.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:617920868765:android:445a7250f157fee0adff74",
+        "android_client_info": {
+          "package_name": "com.goatguard.goatguard_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAcHdg_L5wKb8dojDkUhSyqq6WFbyDQTHo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

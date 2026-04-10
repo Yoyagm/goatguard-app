@@ -48,8 +48,9 @@ app.*.map.json
 *.jks
 *.keystore
 key.properties
-google-services.json
-firebase_options.dart
+# google-services.json and firebase_options.dart contain only public
+# identifiers (API key, project ID) that are embedded in the APK anyway.
+# They must be tracked for CI builds to succeed.
 
 # IDE
 .vscode/
