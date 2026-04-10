@@ -1,78 +1,87 @@
 import 'package:flutter/foundation.dart';
-import '../models/alert.dart';
-import '../services/api_service.dart';
+import '../core/failure.dart';
+import '../core/entities/alert.dart';
+import '../core/use_cases/alerts/get_alerts_use_case.dart';
+import '../core/use_cases/alerts/get_unseen_count_use_case.dart';
+import '../core/use_cases/alerts/mark_alert_seen_use_case.dart';
 
 /// Provider de alertas [RF-15, RF-19]
 class AlertProvider extends ChangeNotifier {
-  final ApiService _api;
+  final GetAlertsUseCase _getAlertsUseCase;
+  final GetUnseenCountUseCase _getUnseenCountUseCase;
+  final MarkAlertSeenUseCase _markAlertSeenUseCase;
 
-  List<NetworkAlert> _alerts = [];
+  List<NetworkAlertEntity> _alerts = [];
   int _unseenCount = 0;
   bool _loading = false;
   String? _error;
 
-  AlertProvider(this._api);
+  AlertProvider({
+    required GetAlertsUseCase getAlertsUseCase,
+    required GetUnseenCountUseCase getUnseenCountUseCase,
+    required MarkAlertSeenUseCase markAlertSeenUseCase,
+  }) : _getAlertsUseCase = getAlertsUseCase,
+       _getUnseenCountUseCase = getUnseenCountUseCase,
+       _markAlertSeenUseCase = markAlertSeenUseCase;
 
-  List<NetworkAlert> get alerts => _alerts;
+  List<NetworkAlertEntity> get alerts => _alerts;
   int get unseenCount => _unseenCount;
   bool get loading => _loading;
   String? get error => _error;
 
-  /// Cargar alertas desde la API
+  /// Cargar alertas desde el dominio
   Future<void> fetchAlerts({String? severity, bool? seen}) async {
     _loading = true;
     _error = null;
     notifyListeners();
 
-    try {
-      final rawAlerts = await _api.getAlerts(severity: severity, seen: seen);
-      _alerts = rawAlerts
-          .map((json) => NetworkAlert.fromJson(json as Map<String, dynamic>))
-          .toList();
+    final alertsResult = await _getAlertsUseCase.call(
+      severity: severity,
+      seen: seen,
+    );
+    final countResult = await _getUnseenCountUseCase.call();
 
-      final countData = await _api.getAlertCount();
-      _unseenCount = countData['unseen_count'] as int? ?? 0;
-
-      _loading = false;
-      notifyListeners();
-    } on ApiException catch (e) {
-      _error = e.message;
-      _loading = false;
-      notifyListeners();
+    switch (alertsResult) {
+      case Success(:final data):
+        _alerts = data;
+      case Err(:final failure):
+        _error = failure.message;
     }
+
+    switch (countResult) {
+      case Success(:final data):
+        _unseenCount = data;
+      case Err(:final failure):
+        // Solo sobreescribir error si no hay uno previo
+        _error ??= failure.message;
+    }
+
+    _loading = false;
+    notifyListeners();
   }
 
-  /// Marcar alerta como leída [RF-19]
+  /// Marcar alerta como leida [RF-19]
   Future<void> markAsSeen(String alertId) async {
-    try {
-      await _api.markAlertSeen(int.parse(alertId));
-      // Actualizar localmente sin esperar re-fetch
-      final idx = _alerts.indexWhere((a) => a.id == alertId);
-      if (idx != -1) {
-        final old = _alerts[idx];
-        _alerts[idx] = NetworkAlert(
-          id: old.id,
-          title: old.title,
-          description: old.description,
-          severity: old.severity,
-          deviceName: old.deviceName,
-          deviceIp: old.deviceIp,
-          timestamp: old.timestamp,
-          isRead: true,
-        );
-        _unseenCount = (_unseenCount - 1).clamp(0, _unseenCount);
+    final result = await _markAlertSeenUseCase.call(int.parse(alertId));
+
+    switch (result) {
+      case Success():
+        // Actualizar localmente sin esperar re-fetch
+        final idx = _alerts.indexWhere((a) => a.id == alertId);
+        if (idx != -1) {
+          _alerts[idx] = _alerts[idx].copyWith(isRead: true);
+          _unseenCount = (_unseenCount - 1).clamp(0, _unseenCount);
+          notifyListeners();
+        }
+      case Err(:final failure):
+        _error = failure.message;
         notifyListeners();
-      }
-    } on ApiException catch (e) {
-      _error = e.message;
-      notifyListeners();
     }
   }
 
-  /// Insertar alerta recibida vía WebSocket push (`alert_created`)
-  void addAlertFromWs(Map<String, dynamic> data) {
-    final alertJson = data['alert'] as Map<String, dynamic>? ?? data;
-    final alert = NetworkAlert.fromJson(alertJson);
+  /// Insertar alerta recibida via WebSocket push (`alert_created`).
+  /// Recibe un [NetworkAlertEntity] ya tipado desde el RealTimeEvent.
+  void addAlertFromWs(NetworkAlertEntity alert) {
     _alerts.insert(0, alert);
     _unseenCount++;
     notifyListeners();

@@ -2,16 +2,27 @@
 //
 // Contrato: pantalla con input de 6 digitos, boton verificar,
 // link a backup code, integración con AuthProvider.completeTotp().
+//
+// Hexagonal migration: providers now use named parameters with use cases.
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
-import 'package:goatguard_app/services/fcm_service.dart';
 import 'package:goatguard_app/providers/auth_provider.dart';
 import 'package:goatguard_app/services/api_service.dart';
+import 'package:goatguard_app/services/fcm_service.dart';
 import 'package:goatguard_app/screens/auth/totp_verify_screen.dart';
+import 'package:goatguard_app/infrastructure/adapters/token_storage_adapter.dart';
+import 'package:goatguard_app/infrastructure/adapters/push_notification_adapter.dart';
+import 'package:goatguard_app/infrastructure/repositories/auth_repository_impl.dart';
+import 'package:goatguard_app/core/use_cases/auth/login_use_case.dart';
+import 'package:goatguard_app/core/use_cases/auth/check_auth_use_case.dart';
+import 'package:goatguard_app/core/use_cases/auth/complete_totp_use_case.dart';
+import 'package:goatguard_app/core/use_cases/auth/complete_enrollment_use_case.dart';
+import 'package:goatguard_app/core/use_cases/auth/logout_use_case.dart';
+import 'package:goatguard_app/core/use_cases/auth/register_use_case.dart';
 
 // ── Fakes ────────────────────────────────────────────────────────────────────
 
@@ -61,7 +72,28 @@ void _mockStorage(Map<String, String?> store) {
       );
 }
 
-Widget _buildTestApp(_FakeApiService api, AuthProvider provider) {
+AuthProvider _buildAuthProvider(_FakeApiService fakeApi) {
+  final tokenStorage = TokenStorageAdapter();
+  final pushAdapter = PushNotificationAdapter(FcmService(fakeApi));
+  final authRepository = AuthRepositoryImpl(fakeApi, tokenStorage);
+
+  return AuthProvider(
+    loginUseCase: LoginUseCase(authRepository),
+    checkAuthUseCase: CheckAuthUseCase(tokenStorage),
+    completeTotpUseCase: CompleteTotpUseCase(authRepository, tokenStorage),
+    completeEnrollmentUseCase: CompleteEnrollmentUseCase(
+      authRepository,
+      tokenStorage,
+    ),
+    logoutUseCase: LogoutUseCase(tokenStorage, pushAdapter),
+    registerUseCase: RegisterUseCase(authRepository),
+    authRepository: authRepository,
+    pushNotificationPort: pushAdapter,
+    tokenStorage: tokenStorage,
+  );
+}
+
+Widget _buildTestApp(AuthProvider provider) {
   return MaterialApp(
     routes: {'/main': (_) => const Scaffold(body: Text('MAIN'))},
     home: ChangeNotifierProvider.value(
@@ -82,7 +114,7 @@ void main() {
     fakeApi = _FakeApiService();
     store = {};
     _mockStorage(store);
-    provider = AuthProvider(fakeApi, FcmService(fakeApi));
+    provider = _buildAuthProvider(fakeApi);
     // Llevar a pendingTotp
     await provider.login('admin', 'pass');
   });
@@ -90,7 +122,7 @@ void main() {
   testWidgets('muestra campo de entrada para codigo TOTP de 6 digitos', (
     tester,
   ) async {
-    await tester.pumpWidget(_buildTestApp(fakeApi, provider));
+    await tester.pumpWidget(_buildTestApp(provider));
     await tester.pumpAndSettle();
 
     expect(find.byType(TextField), findsAtLeastNWidgets(1));
@@ -99,7 +131,7 @@ void main() {
   testWidgets('boton verificar esta deshabilitado con menos de 6 digitos', (
     tester,
   ) async {
-    await tester.pumpWidget(_buildTestApp(fakeApi, provider));
+    await tester.pumpWidget(_buildTestApp(provider));
     await tester.pumpAndSettle();
 
     // Ingresar solo 3 digitos
@@ -112,7 +144,7 @@ void main() {
   });
 
   testWidgets('codigo valido de 6 digitos habilita el boton', (tester) async {
-    await tester.pumpWidget(_buildTestApp(fakeApi, provider));
+    await tester.pumpWidget(_buildTestApp(provider));
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byType(TextField).first, '123456');
@@ -131,7 +163,7 @@ void main() {
       'username': 'admin',
     };
 
-    await tester.pumpWidget(_buildTestApp(fakeApi, provider));
+    await tester.pumpWidget(_buildTestApp(provider));
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byType(TextField).first, '123456');

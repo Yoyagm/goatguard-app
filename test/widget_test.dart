@@ -2,13 +2,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:goatguard_app/main.dart';
-import 'package:goatguard_app/services/api_service.dart';
-import 'package:goatguard_app/services/websocket_service.dart';
+import 'package:goatguard_app/di/injection_container.dart';
 import 'package:goatguard_app/providers/auth_provider.dart';
 import 'package:goatguard_app/providers/device_provider.dart';
 import 'package:goatguard_app/providers/alert_provider.dart';
 import 'package:goatguard_app/providers/metrics_provider.dart';
-import 'package:goatguard_app/services/fcm_service.dart';
 
 void main() {
   testWidgets('App launches and shows splash', (WidgetTester tester) async {
@@ -23,18 +21,58 @@ void main() {
           },
         );
 
-    final api = ApiService();
-    final ws = WebSocketService();
+    final container = InjectionContainer()..init();
 
     await tester.pumpWidget(
       MultiProvider(
         providers: [
           ChangeNotifierProvider(
-            create: (_) => AuthProvider(api, FcmService(api)),
+            create: (_) => AuthProvider(
+              loginUseCase: container.loginUseCase,
+              checkAuthUseCase: container.checkAuthUseCase,
+              completeTotpUseCase: container.completeTotpUseCase,
+              completeEnrollmentUseCase: container.completeEnrollmentUseCase,
+              logoutUseCase: container.logoutUseCase,
+              registerUseCase: container.registerUseCase,
+              authRepository: container.authRepository,
+              pushNotificationPort: container.pushNotificationPort,
+              tokenStorage: container.tokenStorage,
+            ),
           ),
-          ChangeNotifierProvider(create: (_) => DeviceProvider(api)),
-          ChangeNotifierProvider(create: (_) => AlertProvider(api)),
-          ChangeNotifierProvider(create: (_) => MetricsProvider(api, ws)),
+          ChangeNotifierProvider(
+            create: (_) => DeviceProvider(
+              getDevicesUseCase: container.getDevicesUseCase,
+              getAgentsUseCase: container.getAgentsUseCase,
+              getDeviceDetailUseCase: container.getDeviceDetailUseCase,
+              updateDeviceAliasUseCase: container.updateDeviceAliasUseCase,
+              getDeviceHistoryUseCase: container.getDeviceHistoryUseCase,
+              getDeviceConnectionsUseCase:
+                  container.getDeviceConnectionsUseCase,
+            ),
+          ),
+          ChangeNotifierProvider(
+            create: (_) => AlertProvider(
+              getAlertsUseCase: container.getAlertsUseCase,
+              getUnseenCountUseCase: container.getUnseenCountUseCase,
+              markAlertSeenUseCase: container.markAlertSeenUseCase,
+            ),
+          ),
+          ChangeNotifierProvider(
+            create: (_) => MetricsProvider(
+              apiService: container.apiService,
+              getDashboardMetricsUseCase: container.getDashboardMetricsUseCase,
+              getNetworkHistoryUseCase: container.getNetworkHistoryUseCase,
+              getIspHealthUseCase: container.getIspHealthUseCase,
+              getTrafficDistributionUseCase:
+                  container.getTrafficDistributionUseCase,
+              getTopTalkersHistoryUseCase:
+                  container.getTopTalkersHistoryUseCase,
+              getDashboardSummaryUseCase: container.getDashboardSummaryUseCase,
+              getDeviceComparisonUseCase: container.getDeviceComparisonUseCase,
+              networkRepository: container.networkRepository,
+              realTimePort: container.realTimePort,
+            ),
+          ),
         ],
         child: const GoatGuardApp(),
       ),

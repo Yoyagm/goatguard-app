@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
+import '../core/entities/alert.dart';
 import '../providers/auth_provider.dart';
 import '../providers/device_provider.dart';
 import '../providers/alert_provider.dart';
@@ -22,7 +23,7 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   int _currentIndex = 0;
-  StreamSubscription<Map<String, dynamic>>? _wsAlertSub;
+  StreamSubscription<NetworkAlertEntity>? _wsAlertSub;
 
   final _screens = const [
     HomeScreen(),
@@ -72,15 +73,11 @@ class _MainShellState extends State<MainShell> {
       metricsProv.startWebSocket(token);
 
       // Suscribirse al stream de alertas push vía WS
-      _wsAlertSub = metricsProv.wsAlerts.listen((data) {
-        alertProv.addAlertFromWs(data);
+      _wsAlertSub = metricsProv.wsAlerts.listen((alert) {
+        alertProv.addAlertFromWs(alert);
 
-        // SnackBar para alertas críticas
-        final severity =
-            (data['alert'] as Map<String, dynamic>?)?['severity'] as String? ??
-            data['severity'] as String? ??
-            '';
-        if (severity == 'critical' || severity == 'high') {
+        // SnackBar para alertas criticas
+        if (alert.severity == AlertSeverity.critical) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
@@ -88,7 +85,7 @@ class _MainShellState extends State<MainShell> {
                 behavior: SnackBarBehavior.floating,
                 duration: const Duration(seconds: 4),
                 content: Text(
-                  'New alert: ${(data['alert'] as Map<String, dynamic>?)?['description'] ?? 'Critical alert detected'}',
+                  'New alert: ${alert.description.isNotEmpty ? alert.description : 'Critical alert detected'}',
                   style: GoogleFonts.inter(
                     color: Colors.white,
                     fontSize: 13,

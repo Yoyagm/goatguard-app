@@ -3,8 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../config/theme.dart';
+import '../../core/failure.dart';
 import '../../providers/auth_provider.dart';
-import '../../services/api_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -297,25 +297,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _generateInvitation() async {
     setState(() => _invitationLoading = true);
-    try {
-      final data = await context.read<ApiService>().createInvitation();
-      if (!mounted) return;
-      setState(() => _invitationLoading = false);
-      final token = data['invitation_token'] as String? ?? '';
-      final expiresAt = data['expires_at'] as String? ?? '';
-      _showInvitationDialog(token, expiresAt);
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      setState(() => _invitationLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: AppColors.critical,
-          content: Text(
-            e.message,
-            style: GoogleFonts.inter(color: Colors.white),
+    final result = await context.read<AuthProvider>().createInvitation();
+    if (!mounted) return;
+    setState(() => _invitationLoading = false);
+
+    switch (result) {
+      case Success(:final data):
+        final token = data['invitation_token'] as String? ?? '';
+        final expiresAt = data['expires_at'] as String? ?? '';
+        _showInvitationDialog(token, expiresAt);
+      case Err(:final failure):
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: AppColors.critical,
+            content: Text(
+              failure.message,
+              style: GoogleFonts.inter(color: Colors.white),
+            ),
           ),
-        ),
-      );
+        );
     }
   }
 
