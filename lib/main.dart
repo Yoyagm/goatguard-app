@@ -11,6 +11,9 @@ import 'providers/alert_provider.dart';
 import 'providers/metrics_provider.dart';
 import 'screens/splash/splash_screen.dart';
 import 'screens/login/login_screen.dart';
+import 'screens/auth/register_screen.dart';
+import 'screens/auth/totp_verify_screen.dart';
+import 'screens/auth/totp_enroll_screen.dart';
 import 'screens/main_shell.dart';
 import 'screens/device_detail/device_detail_screen.dart';
 
@@ -31,6 +34,7 @@ void main() {
   runApp(
     MultiProvider(
       providers: [
+        Provider<ApiService>.value(value: apiService),
         ChangeNotifierProvider(create: (_) => AuthProvider(apiService)),
         ChangeNotifierProvider(create: (_) => DeviceProvider(apiService)),
         ChangeNotifierProvider(create: (_) => AlertProvider(apiService)),
@@ -56,9 +60,20 @@ class GoatGuardApp extends StatelessWidget {
       routes: {
         '/splash': (_) => const SplashScreen(),
         '/login': (_) => const LoginScreen(),
+        '/register': (_) => const RegisterScreen(),
+        '/totp-verify': (_) => const TotpVerifyScreen(),
         '/main': (_) => const MainShell(),
       },
       onGenerateRoute: (settings) {
+        if (settings.name == '/totp-enroll') {
+          final args = settings.arguments as Map<String, dynamic>;
+          return MaterialPageRoute(
+            builder: (_) => TotpEnrollScreen(
+              totpUri: args['totp_uri'] as String? ?? '',
+              qrBase64: args['qr_base64'] as String? ?? '',
+            ),
+          );
+        }
         if (settings.name == '/device') {
           final device = settings.arguments as Device;
           return MaterialPageRoute(

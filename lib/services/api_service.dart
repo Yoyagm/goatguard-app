@@ -18,13 +18,19 @@ class ApiException implements Exception {
 /// Callback para manejar expiración de JWT globalmente
 typedef OnUnauthorized = void Function();
 
-/// Cliente HTTP centralizado con interceptor JWT [RF-13, RF-17]
+/// Cliente HTTP centralizado con interceptor JWT [RF-13, RF-16, RF-17]
 class ApiService {
   late final Dio _dio;
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
   OnUnauthorized? onUnauthorized;
 
-  ApiService({String? baseUrl}) {
+  /// [dio] permite inyectar un Dio pre-configurado para testing.
+  /// En produccion se crea internamente con interceptor JWT.
+  ApiService({String? baseUrl, Dio? dio}) {
+    if (dio != null) {
+      _dio = dio;
+      return;
+    }
     _dio = Dio(
       BaseOptions(
         baseUrl: baseUrl ?? Env.apiBaseUrl,
@@ -43,9 +49,13 @@ class ApiService {
     RequestOptions options,
     RequestInterceptorHandler handler,
   ) async {
-    final token = await _storage.read(key: 'jwt_token');
-    if (token != null) {
-      options.headers['Authorization'] = 'Bearer $token';
+    // No sobreescribir si el caller ya definio Authorization
+    // (ej. recoveryResetPassword envia resetToken explicitamente)
+    if (!options.headers.containsKey('Authorization')) {
+      final token = await _storage.read(key: 'jwt_token');
+      if (token != null) {
+        options.headers['Authorization'] = 'Bearer $token';
+      }
     }
     handler.next(options);
   }
@@ -86,12 +96,88 @@ class ApiService {
 
   Future<Map<String, dynamic>> register(
     String username,
-    String password,
+    String password, {
+    String? invitationToken,
+  }) async {
+    final data = <String, dynamic>{
+      'username': username,
+      'password': password,
+    };
+    if (invitationToken != null) {
+      data['invitation_token'] = invitationToken;
+    }
+    return _request(
+      () => _dio.post('/auth/register', data: data),
+    );
+  }
+
+  /// Verifica si el sistema necesita bootstrap (0 usuarios en BD).
+  /// Endpoint publico, no requiere JWT.
+  Future<Map<String, dynamic>> checkBootstrapStatus() async {
+    return _request(() => _dio.get('/auth/bootstrap-status'));
+  }
+
+  /// Genera un invitation token (requiere scope=full_access).
+  Future<Map<String, dynamic>> createInvitation() async {
+    return _request(() => _dio.post('/auth/invitations'));
+  }
+
+  // ─── TOTP 2FA [RF-16] ─────────────────────────────────────
+
+  /// Paso 2 del login: verifica codigo TOTP de 6 digitos.
+  /// Requiere JWT con scope=pending_totp en storage.
+  Future<Map<String, dynamic>> totpVerify(String code) async {
+    return _request(
+      () => _dio.post('/auth/totp/verify', data: {'code': code}),
+    );
+  }
+
+  /// Primer TOTP tras registro: confirma enrollment y retorna backup codes.
+  /// Requiere JWT con scope=pending_totp en storage.
+  Future<Map<String, dynamic>> totpEnrollVerify(String code) async {
+    return _request(
+      () => _dio.post('/auth/totp/enroll/verify', data: {'code': code}),
+    );
+  }
+
+  /// Login alternativo con backup code cuando no se tiene acceso al TOTP.
+  /// Requiere JWT con scope=pending_totp en storage.
+  Future<Map<String, dynamic>> totpVerifyBackup(String backupCode) async {
+    return _request(
+      () => _dio.post(
+        '/auth/totp/verify-backup',
+        data: {'backup_code': backupCode},
+      ),
+    );
+  }
+
+  /// Verifica recovery code para iniciar reset de password.
+  /// No requiere JWT previo — el usuario olvido credenciales.
+  Future<Map<String, dynamic>> recoveryVerifyCode(
+    String username,
+    String recoveryCode,
   ) async {
     return _request(
       () => _dio.post(
-        '/auth/register',
-        data: {'username': username, 'password': password},
+        '/auth/recovery/verify-code',
+        data: {'username': username, 'recovery_code': recoveryCode},
+      ),
+    );
+  }
+
+  /// Cambia password usando reset_token (scope=password_reset).
+  /// El [resetToken] se envia como Bearer, NO el token almacenado.
+  Future<Map<String, dynamic>> recoveryResetPassword(
+    String newPassword, {
+    required String resetToken,
+  }) async {
+    return _request(
+      () => _dio.post(
+        '/auth/recovery/reset-password',
+        data: {'new_password': newPassword},
+        options: Options(
+          headers: {'Authorization': 'Bearer $resetToken'},
+        ),
       ),
     );
   }

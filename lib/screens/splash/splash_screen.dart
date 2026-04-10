@@ -50,10 +50,14 @@ class _SplashScreenState extends State<SplashScreen>
     if (!mounted) return;
 
     final auth = context.read<AuthProvider>();
-    if (auth.isAuthenticated) {
-      Navigator.of(context).pushReplacementNamed('/main');
-    } else {
-      Navigator.of(context).pushReplacementNamed('/login');
+    switch (auth.state) {
+      case AuthState.authenticated:
+        Navigator.of(context).pushReplacementNamed('/main');
+      case AuthState.pendingTotp:
+      case AuthState.pendingEnrollment:
+        Navigator.of(context).pushReplacementNamed('/totp-verify');
+      default:
+        Navigator.of(context).pushReplacementNamed('/login');
     }
   }
 
