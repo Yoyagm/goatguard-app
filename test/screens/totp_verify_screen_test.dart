@@ -41,23 +41,23 @@ class _FakeApiService extends ApiService {
 void _mockStorage(Map<String, String?> store) {
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .setMockMethodCallHandler(
-    const MethodChannel('plugins.it_nomads.com/flutter_secure_storage'),
-    (MethodCall call) async {
-      switch (call.method) {
-        case 'read':
-          return store[(call.arguments as Map)['key'] as String];
-        case 'write':
-          final args = call.arguments as Map;
-          store[args['key'] as String] = args['value'] as String?;
-          return null;
-        case 'delete':
-          store.remove((call.arguments as Map)['key'] as String);
-          return null;
-        default:
-          return null;
-      }
-    },
-  );
+        const MethodChannel('plugins.it_nomads.com/flutter_secure_storage'),
+        (MethodCall call) async {
+          switch (call.method) {
+            case 'read':
+              return store[(call.arguments as Map)['key'] as String];
+            case 'write':
+              final args = call.arguments as Map;
+              store[args['key'] as String] = args['value'] as String?;
+              return null;
+            case 'delete':
+              store.remove((call.arguments as Map)['key'] as String);
+              return null;
+            default:
+              return null;
+          }
+        },
+      );
 }
 
 Widget _buildTestApp(_FakeApiService api, AuthProvider provider) {
@@ -86,16 +86,18 @@ void main() {
     await provider.login('admin', 'pass');
   });
 
-  testWidgets('muestra campo de entrada para codigo TOTP de 6 digitos',
-      (tester) async {
+  testWidgets('muestra campo de entrada para codigo TOTP de 6 digitos', (
+    tester,
+  ) async {
     await tester.pumpWidget(_buildTestApp(fakeApi, provider));
     await tester.pumpAndSettle();
 
     expect(find.byType(TextField), findsAtLeastNWidgets(1));
   });
 
-  testWidgets('boton verificar esta deshabilitado con menos de 6 digitos',
-      (tester) async {
+  testWidgets('boton verificar esta deshabilitado con menos de 6 digitos', (
+    tester,
+  ) async {
     await tester.pumpWidget(_buildTestApp(fakeApi, provider));
     await tester.pumpAndSettle();
 
@@ -119,8 +121,9 @@ void main() {
     expect(button.onPressed, isNotNull);
   });
 
-  testWidgets('verificacion exitosa navega fuera de la pantalla',
-      (tester) async {
+  testWidgets('verificacion exitosa navega fuera de la pantalla', (
+    tester,
+  ) async {
     fakeApi.totpVerifyResponse = {
       'access_token': 'jwt-full',
       'token_type': 'bearer',

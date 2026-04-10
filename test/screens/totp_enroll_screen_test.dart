@@ -39,23 +39,23 @@ class _FakeApiService extends ApiService {
 void _mockStorage(Map<String, String?> store) {
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .setMockMethodCallHandler(
-    const MethodChannel('plugins.it_nomads.com/flutter_secure_storage'),
-    (MethodCall call) async {
-      switch (call.method) {
-        case 'read':
-          return store[(call.arguments as Map)['key'] as String];
-        case 'write':
-          final args = call.arguments as Map;
-          store[args['key'] as String] = args['value'] as String?;
-          return null;
-        case 'delete':
-          store.remove((call.arguments as Map)['key'] as String);
-          return null;
-        default:
-          return null;
-      }
-    },
-  );
+        const MethodChannel('plugins.it_nomads.com/flutter_secure_storage'),
+        (MethodCall call) async {
+          switch (call.method) {
+            case 'read':
+              return store[(call.arguments as Map)['key'] as String];
+            case 'write':
+              final args = call.arguments as Map;
+              store[args['key'] as String] = args['value'] as String?;
+              return null;
+            case 'delete':
+              store.remove((call.arguments as Map)['key'] as String);
+              return null;
+            default:
+              return null;
+          }
+        },
+      );
 }
 
 void main() {
@@ -74,15 +74,17 @@ void main() {
   });
 
   testWidgets('muestra campo de entrada para codigo TOTP', (tester) async {
-    await tester.pumpWidget(MaterialApp(
-      home: ChangeNotifierProvider.value(
-        value: provider,
-        child: const TotpEnrollScreen(
-          totpUri: 'otpauth://totp/GOATGuard:admin?secret=TEST',
-          qrBase64: '',
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChangeNotifierProvider.value(
+          value: provider,
+          child: const TotpEnrollScreen(
+            totpUri: 'otpauth://totp/GOATGuard:admin?secret=TEST',
+            qrBase64: '',
+          ),
         ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
 
     expect(find.byType(TextField), findsAtLeastNWidgets(1));
@@ -93,16 +95,18 @@ void main() {
       'backup_codes': ['AAAA-BBBB-CCCC', 'DDDD-EEEE-FFFF'],
     };
 
-    await tester.pumpWidget(MaterialApp(
-      routes: {'/main': (_) => const Scaffold(body: Text('MAIN'))},
-      home: ChangeNotifierProvider.value(
-        value: provider,
-        child: const TotpEnrollScreen(
-          totpUri: 'otpauth://totp/GOATGuard:admin?secret=TEST',
-          qrBase64: '',
+    await tester.pumpWidget(
+      MaterialApp(
+        routes: {'/main': (_) => const Scaffold(body: Text('MAIN'))},
+        home: ChangeNotifierProvider.value(
+          value: provider,
+          child: const TotpEnrollScreen(
+            totpUri: 'otpauth://totp/GOATGuard:admin?secret=TEST',
+            qrBase64: '',
+          ),
         ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byType(TextField).first, '654321');

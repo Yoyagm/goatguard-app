@@ -57,9 +57,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     });
 
     try {
-      final token = _isBootstrap
-          ? null
-          : _invitationController.text.trim();
+      final token = _isBootstrap ? null : _invitationController.text.trim();
       final data = await context.read<ApiService>().register(
         _usernameController.text.trim(),
         _passwordController.text,
@@ -182,8 +180,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 style: GoogleFonts.inter(color: AppColors.textPrimary),
                 decoration: InputDecoration(
                   hintText: 'Contraseña (mín. 15 caracteres)',
-                  prefixIcon:
-                      const Icon(Icons.lock, color: AppColors.textTertiary),
+                  prefixIcon: const Icon(
+                    Icons.lock,
+                    color: AppColors.textTertiary,
+                  ),
                   suffixIcon: IconButton(
                     icon: Icon(
                       _obscurePassword
@@ -205,8 +205,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   style: GoogleFonts.inter(color: AppColors.textPrimary),
                   decoration: const InputDecoration(
                     hintText: 'Token de invitación',
-                    prefixIcon:
-                        Icon(Icons.vpn_key, color: AppColors.textTertiary),
+                    prefixIcon: Icon(
+                      Icons.vpn_key,
+                      color: AppColors.textTertiary,
+                    ),
                   ),
                   onChanged: (_) => setState(() {}),
                 ),
@@ -220,8 +222,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         height: 20,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : Text('Registrarse',
-                        style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+                    : Text(
+                        'Registrarse',
+                        style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                      ),
               ),
               const SizedBox(height: 16),
               TextButton(
@@ -300,8 +304,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 onPressed: () {
                   Clipboard.setData(ClipboardData(text: recoveryCode));
                   Future.delayed(const Duration(seconds: 30), () async {
-                    final current =
-                        await Clipboard.getData(Clipboard.kTextPlain);
+                    final current = await Clipboard.getData(
+                      Clipboard.kTextPlain,
+                    );
                     if (current?.text == recoveryCode) {
                       Clipboard.setData(const ClipboardData(text: ''));
                     }
@@ -320,8 +325,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
               const SizedBox(height: 24),
               ElevatedButton(
                 onPressed: _handleContinueToEnroll,
-                child: Text('Continuar con TOTP',
-                    style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+                child: Text(
+                  'Continuar con TOTP',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                ),
               ),
             ],
           ),
