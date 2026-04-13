@@ -37,6 +37,7 @@ import 'infrastructure/repositories/device_repository_impl.dart';
 import 'infrastructure/repositories/agent_repository_impl.dart';
 import 'infrastructure/repositories/alert_repository_impl.dart';
 import 'infrastructure/repositories/network_repository_impl.dart';
+import 'config/env.dart';
 import 'services/api_service.dart';
 import 'services/fcm_service.dart';
 import 'services/websocket_service.dart';
@@ -66,6 +67,9 @@ void main() async {
       systemNavigationBarIconBrightness: Brightness.light,
     ),
   );
+
+  // Cargar URL del server guardada (o usar default)
+  await Env.load();
 
   // --- Infrastructure (services + adapters) ---------------------------------
   final apiService = ApiService();

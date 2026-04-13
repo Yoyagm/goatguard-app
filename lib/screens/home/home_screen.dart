@@ -5,7 +5,6 @@ import '../../config/theme.dart';
 import '../../config/helpers.dart';
 import '../../providers/device_provider.dart';
 import '../../providers/metrics_provider.dart';
-import '../../providers/mock_data.dart';
 import '../../widgets/common/health_bar.dart';
 import '../../widgets/common/metric_card.dart';
 import '../../widgets/common/status_chip.dart';
@@ -20,14 +19,83 @@ class HomeScreen extends StatelessWidget {
     final metricsProv = context.watch<MetricsProvider>();
     final deviceProv = context.watch<DeviceProvider>();
 
-    // Fallback a MockData si la API aún no responde
-    final metrics = metricsProv.metrics ?? MockData.networkMetrics;
-    final agents = deviceProv.agents.isNotEmpty
-        ? deviceProv.agents
-        : MockData.agents;
-    final consumers = metricsProv.topConsumers.isNotEmpty
-        ? metricsProv.topConsumers
-        : MockData.topConsumers;
+    final metrics = metricsProv.metrics;
+    final agents = deviceProv.agents;
+    final consumers = metricsProv.topConsumers;
+
+    // Loading state
+    if (metrics == null && metricsProv.loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    // Error state
+    if (metrics == null && metricsProv.error != null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.cloud_off_rounded, color: AppColors.critical, size: 48),
+            const SizedBox(height: 12),
+            Text(
+              'Could not connect to server',
+              style: GoogleFonts.inter(
+                color: AppColors.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              metricsProv.error!,
+              style: GoogleFonts.inter(
+                color: AppColors.textSecondary,
+                fontSize: 13,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: () async {
+                await Future.wait([
+                  deviceProv.fetchDevices(),
+                  deviceProv.fetchAgents(),
+                ]);
+                await metricsProv.fetchMetrics(
+                  activeAgents: deviceProv.activeAgentCount,
+                  totalAgents: deviceProv.totalAgentCount,
+                );
+              },
+              icon: const Icon(Icons.refresh_rounded, size: 18),
+              label: const Text('Retry'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Empty state: server sin datos aún
+    if (metrics == null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.hourglass_empty_rounded,
+              color: AppColors.neutral,
+              size: 48,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Waiting for data...',
+              style: GoogleFonts.inter(
+                color: AppColors.textSecondary,
+                fontSize: 16,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
     final activeAgents = agents.where((a) => a.status.name == 'active').length;
     final inactiveAgents = agents.length - activeAgents;

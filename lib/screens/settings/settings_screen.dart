@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../../config/env.dart';
 import '../../config/theme.dart';
 import '../../core/failure.dart';
 import '../../providers/auth_provider.dart';
@@ -98,10 +99,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
           'Network Configuration',
           "Juan Monsalve's Network",
         ),
-        _settingsTile(
-          Icons.router_rounded,
-          'Backend Server',
-          '192.168.59.1:8080',
+        GestureDetector(
+          onTap: () => _showServerUrlDialog(),
+          child: _settingsTile(
+            Icons.router_rounded,
+            'Backend Server',
+            Env.apiBaseUrl,
+          ),
         ),
         _settingsTile(Icons.timer_rounded, 'Refresh Interval', '30 seconds'),
 
@@ -394,6 +398,83 @@ class _SettingsScreenState extends State<SettingsScreen> {
               'Close',
               style: GoogleFonts.inter(color: AppColors.textSecondary),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showServerUrlDialog() {
+    final controller = TextEditingController(text: Env.apiBaseUrl);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Backend Server',
+          style: GoogleFonts.inter(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Enter the server URL (e.g. http://100.64.0.1:8000 for Tailscale).',
+              style: GoogleFonts.inter(
+                color: AppColors.textSecondary,
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              style: GoogleFonts.jetBrainsMono(
+                color: AppColors.textPrimary,
+                fontSize: 13,
+              ),
+              decoration: InputDecoration(
+                hintText: 'http://IP:8000',
+                hintStyle: GoogleFonts.jetBrainsMono(
+                  color: AppColors.textTertiary,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.inter(color: AppColors.textSecondary),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final url = controller.text.trim();
+              if (url.isEmpty) return;
+              await Env.setServerUrl(url);
+              if (!ctx.mounted) return;
+              Navigator.pop(ctx);
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  backgroundColor: AppColors.surface,
+                  content: Text(
+                    'Server URL saved. Restart the app to apply.',
+                    style: GoogleFonts.inter(color: AppColors.textPrimary),
+                  ),
+                ),
+              );
+            },
+            child: const Text('Save'),
           ),
         ],
       ),

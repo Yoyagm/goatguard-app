@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import '../../config/theme.dart';
 import '../../models/device.dart';
 import '../../providers/device_provider.dart';
-import '../../providers/mock_data.dart';
 import '../../widgets/cards/device_tile.dart';
 
 enum DeviceFilter { all, withAgent, arpOnly, withAlerts }
@@ -62,10 +61,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
   Widget build(BuildContext context) {
     final deviceProv = context.watch<DeviceProvider>();
 
-    // Fallback a MockData si la API aún no responde
-    final allDevices = deviceProv.devices.isNotEmpty
-        ? deviceProv.devices
-        : MockData.devices;
+    final allDevices = deviceProv.devices;
     final devices = _applyFilters(allDevices);
 
     final withAgent = devices

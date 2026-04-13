@@ -7,7 +7,6 @@ import '../../models/device.dart';
 import '../../models/network_metrics.dart';
 import '../../providers/alert_provider.dart';
 import '../../providers/device_provider.dart';
-import '../../providers/mock_data.dart';
 import '../../widgets/common/resource_bar.dart';
 import '../../widgets/common/status_chip.dart';
 import '../../widgets/charts/line_metric_chart.dart';
@@ -60,10 +59,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
 
     // Alertas desde provider; filtro client-side porque GET /alerts no soporta device_id
     final alertProv = context.watch<AlertProvider>();
-    final allAlerts = alertProv.alerts.isNotEmpty
-        ? alertProv.alerts
-        : MockData.alerts;
-    final alerts = allAlerts
+    final alerts = alertProv.alerts
         .where((a) => a.deviceIp == device.ipAddress)
         .toList();
 
@@ -272,52 +268,41 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
                 ),
               ),
 
-            // TCP Retransmissions Chart — real data or mock fallback
-            LineMetricChart(
-              title: 'TCP Retransmissions (1h)',
-              data: hasHistory
-                  ? history
-                        .map(
-                          (s) => TimeSeriesPoint(
-                            time: s.timestamp,
-                            value: s.tcpRetransmissions,
-                          ),
-                        )
-                        .toList()
-                  : MockData.generateTimeSeries(
-                      points: 30,
-                      baseValue: 5,
-                      variance: 8,
-                      withSpike: true,
-                    ),
-              lineColor: AppColors.chartRed,
-              unit: 'rt/m',
-              warningThreshold: 5,
-              criticalThreshold: 15,
-            ),
-            const SizedBox(height: 12),
+            // TCP Retransmissions Chart
+            if (hasHistory)
+              LineMetricChart(
+                title: 'TCP Retransmissions (1h)',
+                data: history
+                    .map(
+                      (s) => TimeSeriesPoint(
+                        time: s.timestamp,
+                        value: s.tcpRetransmissions,
+                      ),
+                    )
+                    .toList(),
+                lineColor: AppColors.chartRed,
+                unit: 'rt/m',
+                warningThreshold: 5,
+                criticalThreshold: 15,
+              ),
+            if (hasHistory) const SizedBox(height: 12),
 
-            // Bandwidth Chart — real data or mock fallback
-            LineMetricChart(
-              title: 'Bandwidth In (1h)',
-              data: hasHistory
-                  ? history
-                        .map(
-                          (s) => TimeSeriesPoint(
-                            time: s.timestamp,
-                            value: s.bandwidthIn,
-                          ),
-                        )
-                        .toList()
-                  : MockData.generateTimeSeries(
-                      points: 30,
-                      baseValue: 120,
-                      variance: 60,
-                    ),
-              lineColor: AppColors.chartTeal,
-              unit: 'Mbps',
-            ),
-            const SizedBox(height: 12),
+            // Bandwidth Chart
+            if (hasHistory)
+              LineMetricChart(
+                title: 'Bandwidth In (1h)',
+                data: history
+                    .map(
+                      (s) => TimeSeriesPoint(
+                        time: s.timestamp,
+                        value: s.bandwidthIn,
+                      ),
+                    )
+                    .toList(),
+                lineColor: AppColors.chartTeal,
+                unit: 'Mbps',
+              ),
+            if (hasHistory) const SizedBox(height: 12),
 
             // CPU History Chart (solo si hay datos reales)
             if (hasHistory)

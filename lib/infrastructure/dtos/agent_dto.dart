@@ -23,13 +23,16 @@ class AgentDto {
     this.lastHeartbeat,
   });
 
-  /// From GET /agents/ (flat agent object).
+  /// From GET /agents/ (flat agent object with metrics).
   factory AgentDto.fromJson(Map<String, dynamic> json) => AgentDto(
     uid: json['uid'],
     id: json['id'],
     hostname: json['hostname'] as String?,
     ip: json['ip'] as String?,
     status: json['status'] as String?,
+    cpuPct: json['cpu_pct'],
+    ramPct: json['ram_pct'],
+    linkSpeed: json['link_speed_mbps'],
     lastHeartbeat: json['last_heartbeat'] as String?,
   );
 

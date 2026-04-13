@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import '../../config/theme.dart';
 import '../../models/alert.dart';
 import '../../providers/alert_provider.dart';
-import '../../providers/mock_data.dart';
 import '../../widgets/cards/alert_tile.dart';
 
 class AlertsScreen extends StatefulWidget {
@@ -26,10 +25,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
   Widget build(BuildContext context) {
     final alertProv = context.watch<AlertProvider>();
 
-    // Fallback a MockData si la API aún no responde
-    final allAlerts = alertProv.alerts.isNotEmpty
-        ? alertProv.alerts
-        : MockData.alerts;
+    final allAlerts = alertProv.alerts;
     final alerts = _applyFilter(allAlerts);
     final unread = alerts.where((a) => !a.isRead).length;
 
